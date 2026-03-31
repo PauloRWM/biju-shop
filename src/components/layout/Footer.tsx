@@ -1,5 +1,5 @@
 import { Link } from "react-router-dom";
-import { Instagram, Facebook, Mail } from "lucide-react";
+import { Mail, Globe, MessageCircle } from "lucide-react";
 
 const Footer = () => (
   <footer className="bg-secondary/50 border-t mt-16">
