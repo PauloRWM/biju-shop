@@ -33,10 +33,10 @@ const Footer = () => (
           <h4 className="font-sans font-semibold text-sm mb-3 uppercase tracking-wider">Redes Sociais</h4>
           <div className="flex gap-3">
             <span className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center cursor-pointer hover:bg-primary/20 transition-colors">
-              <Instagram className="h-4 w-4 text-primary" />
+              <Globe className="h-4 w-4 text-primary" />
             </span>
             <span className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center cursor-pointer hover:bg-primary/20 transition-colors">
-              <Facebook className="h-4 w-4 text-primary" />
+              <MessageCircle className="h-4 w-4 text-primary" />
             </span>
             <span className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center cursor-pointer hover:bg-primary/20 transition-colors">
               <Mail className="h-4 w-4 text-primary" />
