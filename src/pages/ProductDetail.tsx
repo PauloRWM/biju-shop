@@ -7,6 +7,7 @@ import { ShoppingBag, Heart, ChevronLeft, Star, Truck, Shield } from "lucide-rea
 import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
 import ProductCard from "@/components/ProductCard";
+import LoadingSpinner from "@/components/LoadingSpinner";
 
 const ProductDetail = () => {
   const { id } = useParams();
@@ -14,6 +15,15 @@ const ProductDetail = () => {
   const { addItem } = useCart();
   const [selectedImage, setSelectedImage] = useState(0);
   const [qty, setQty] = useState(1);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    setLoading(true);
+    setSelectedImage(0);
+    setQty(1);
+    const timer = setTimeout(() => setLoading(false), 600);
+    return () => clearTimeout(timer);
+  }, [id]);
 
   if (!product) {
     return (
