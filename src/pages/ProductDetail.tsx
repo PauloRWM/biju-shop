@@ -28,7 +28,9 @@ const ProductDetail = () => {
     );
   }
 
-  const related = products.filter((p) => p.category === product.category && p.id !== product.id).slice(0, 4);
+  const sameCategory = products.filter((p) => p.category === product.category && p.id !== product.id);
+  const otherProducts = products.filter((p) => p.category !== product.category && p.id !== product.id);
+  const related = [...sameCategory, ...otherProducts].slice(0, 4);
   const discount = product.originalPrice
     ? Math.round((1 - product.price / product.originalPrice) * 100)
     : null;
