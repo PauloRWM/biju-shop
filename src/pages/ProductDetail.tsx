@@ -4,7 +4,7 @@ import Layout from "@/components/layout/Layout";
 import { useCart } from "@/contexts/CartContext";
 import { Button } from "@/components/ui/button";
 import { ShoppingBag, Heart, ChevronLeft, Star, Truck, Shield } from "lucide-react";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
 import ProductCard from "@/components/ProductCard";
 
