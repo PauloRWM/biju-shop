@@ -25,6 +25,14 @@ const ProductDetail = () => {
     return () => clearTimeout(timer);
   }, [id]);
 
+  if (loading) {
+    return (
+      <Layout>
+        <LoadingSpinner />
+      </Layout>
+    );
+  }
+
   if (!product) {
     return (
       <Layout>
