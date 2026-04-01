@@ -1,12 +1,11 @@
 import { Link } from "react-router-dom";
-import { ShoppingBag, User, Search, Menu, X } from "lucide-react";
-import { useCart } from "@/contexts/CartContext";
+import { User, Search, Menu, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
+import CartDrawer from "@/components/CartDrawer";
 
 const Header = () => {
-  const { totalItems } = useCart();
   const [mobileOpen, setMobileOpen] = useState(false);
 
   const navLinks = [
@@ -21,7 +20,7 @@ const Header = () => {
   return (
     <header className="sticky top-0 z-50 bg-background/80 backdrop-blur-md border-b">
       <div className="container mx-auto px-4">
-        <div className="flex items-center justify-between h-16">
+        <div className="flex items-center justify-between h-14 md:h-16">
           {/* Mobile menu */}
           <Button
             variant="ghost"
@@ -33,7 +32,7 @@ const Header = () => {
           </Button>
 
           {/* Logo */}
-          <Link to="/" className="font-display text-xl md:text-2xl font-bold tracking-tight text-foreground">
+          <Link to="/" className="font-display text-lg md:text-2xl font-bold tracking-tight text-foreground">
             Luminária
           </Link>
 
@@ -51,25 +50,16 @@ const Header = () => {
           </nav>
 
           {/* Actions */}
-          <div className="flex items-center gap-1">
+          <div className="flex items-center gap-0.5 md:gap-1">
             <Button variant="ghost" size="icon" className="hidden md:inline-flex">
               <Search className="h-5 w-5" />
             </Button>
-            <Link to="/conta">
+            <Link to="/conta" className="hidden sm:block">
               <Button variant="ghost" size="icon">
                 <User className="h-5 w-5" />
               </Button>
             </Link>
-            <Link to="/carrinho" className="relative">
-              <Button variant="ghost" size="icon">
-                <ShoppingBag className="h-5 w-5" />
-                {totalItems > 0 && (
-                  <span className="absolute -top-1 -right-1 bg-accent text-accent-foreground text-xs w-5 h-5 rounded-full flex items-center justify-center font-semibold">
-                    {totalItems}
-                  </span>
-                )}
-              </Button>
-            </Link>
+            <CartDrawer />
           </div>
         </div>
       </div>
@@ -94,6 +84,13 @@ const Header = () => {
                   {link.label}
                 </Link>
               ))}
+              <Link
+                to="/conta"
+                onClick={() => setMobileOpen(false)}
+                className="text-sm font-medium text-muted-foreground hover:text-foreground py-1 sm:hidden"
+              >
+                Minha Conta
+              </Link>
             </div>
           </motion.nav>
         )}
