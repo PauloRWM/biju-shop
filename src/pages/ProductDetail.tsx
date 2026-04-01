@@ -105,18 +105,28 @@ const ProductDetail = () => {
               </span>
             </div>
 
-            <div className="flex items-baseline gap-3 mb-6">
-              <span className="text-3xl font-bold text-foreground">
+            <div className="mb-6 space-y-1">
+              <div className="flex items-baseline gap-3">
+                {product.originalPrice && (
+                  <span className="text-base text-muted-foreground line-through">
+                    R$ {product.originalPrice.toFixed(2).replace(".", ",")}
+                  </span>
+                )}
+                {discount && (
+                  <span className="text-xs font-bold bg-accent text-accent-foreground px-2 py-0.5 rounded-md">
+                    -{discount}% OFF
+                  </span>
+                )}
+              </div>
+              <span className="text-3xl font-bold text-foreground block">
                 R$ {product.price.toFixed(2).replace(".", ",")}
               </span>
-              {product.originalPrice && (
-                <span className="text-lg text-muted-foreground line-through">
-                  R$ {product.originalPrice.toFixed(2).replace(".", ",")}
-                </span>
-              )}
-              {discount && (
-                <span className="text-sm font-semibold text-accent">-{discount}%</span>
-              )}
+              <span className="text-base font-semibold text-pix block">
+                R$ {(product.price * 0.9).toFixed(2).replace(".", ",")} no PIX (10% off)
+              </span>
+              <span className="text-sm text-muted-foreground block">
+                ou 3x de R$ {(product.price / 3).toFixed(2).replace(".", ",")} sem juros no cartão
+              </span>
             </div>
 
             <p className="text-sm text-muted-foreground leading-relaxed mb-6">
