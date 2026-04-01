@@ -93,7 +93,7 @@ const ProductCard = ({ product }: { product: Product }) => {
               R$ {product.price.toFixed(2).replace(".", ",")}
             </span>
           </div>
-          <span className="text-[11px] font-semibold text-green-600 block">
+          <span className="text-[11px] font-semibold text-pix block">
             R$ {pixPrice.toFixed(2).replace(".", ",")} no PIX
           </span>
           <span className="text-[11px] text-muted-foreground block">

@@ -121,7 +121,7 @@ const ProductDetail = () => {
               <span className="text-3xl font-bold text-foreground block">
                 R$ {product.price.toFixed(2).replace(".", ",")}
               </span>
-              <span className="text-base font-semibold text-green-600 block">
+              <span className="text-base font-semibold text-pix block">
                 R$ {(product.price * 0.9).toFixed(2).replace(".", ",")} no PIX (10% off)
               </span>
               <span className="text-sm text-muted-foreground block">
