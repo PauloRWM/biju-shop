@@ -90,7 +90,7 @@ const Index = () => {
       setActiveCategory(catParam);
       setTimeout(() => {
         document.getElementById("produtos")?.scrollIntoView({ behavior: "smooth", block: "start" });
-      }, 100);
+      }, 500);
     }
   }, [catParam]);
 
