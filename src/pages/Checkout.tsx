@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import Layout from "@/components/layout/Layout";
 import { useCart } from "@/contexts/CartContext";
+import { useCreateOrder } from "@/hooks/useOrder";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -15,28 +16,67 @@ import {
   Barcode,
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
+import { toast } from "sonner";
 
 type PaymentMethod = "credit" | "pix" | "boleto";
 
 const Checkout = () => {
   const { items, totalPrice, clearCart } = useCart();
   const navigate = useNavigate();
+  const createOrder = useCreateOrder();
   const [step, setStep] = useState<"form" | "success">("form");
+  const [orderId, setOrderId] = useState<number | null>(null);
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("pix");
   const shipping = totalPrice >= 99 ? 0 : 14.9;
 
   const discount = paymentMethod === "pix" ? totalPrice * 0.1 : 0;
   const total = totalPrice - discount + shipping;
 
+  // Form state
+  const [form, setForm] = useState({
+    firstName: "", lastName: "", email: "", phone: "",
+    postcode: "", address: "", number: "", complement: "",
+    neighborhood: "", city: "", state: "",
+  });
+
+  const set = (field: string) => (e: React.ChangeEvent<HTMLInputElement>) =>
+    setForm((prev) => ({ ...prev, [field]: e.target.value }));
+
   if (items.length === 0 && step !== "success") {
     navigate("/carrinho");
     return null;
   }
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setStep("success");
-    clearCart();
+    const paymentMap: Record<PaymentMethod, "pix" | "billet" | "credit_card"> = {
+      pix: "pix", boleto: "billet", credit: "credit_card",
+    };
+
+    try {
+      const order = await createOrder.mutateAsync({
+        billing: {
+          first_name: form.firstName,
+          last_name: form.lastName,
+          email: form.email,
+          phone: form.phone,
+          address_1: `${form.address}, ${form.number}${form.complement ? ` - ${form.complement}` : ""}`,
+          city: form.city,
+          state: form.state,
+          postcode: form.postcode,
+        },
+        items: items.map(({ product, quantity }) => ({
+          product_id: Number(product.id),
+          quantity,
+        })),
+        payment_method: paymentMap[paymentMethod],
+      });
+      setOrderId(order.id);
+      setStep("success");
+      clearCart();
+    } catch {
+      toast.error("Erro ao finalizar pedido. Tente novamente.");
+    }
   };
 
   const paymentMethods: {
@@ -124,12 +164,14 @@ const Checkout = () => {
                       </span>
                       Dados de Contato
                     </h2>
-                    <Input placeholder="Nome completo" required />
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                      <Input type="email" placeholder="E-mail" required />
-                      <Input type="tel" placeholder="Telefone (WhatsApp)" required />
+                      <Input placeholder="Nome" value={form.firstName} onChange={set("firstName")} required />
+                      <Input placeholder="Sobrenome" value={form.lastName} onChange={set("lastName")} required />
                     </div>
-                    <Input placeholder="CPF" required />
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <Input type="email" placeholder="E-mail" value={form.email} onChange={set("email")} required />
+                      <Input type="tel" placeholder="Telefone (WhatsApp)" value={form.phone} onChange={set("phone")} required />
+                    </div>
                   </section>
 
                   {/* Address */}
@@ -141,22 +183,24 @@ const Checkout = () => {
                       Endereço de Entrega
                     </h2>
                     <div className="grid grid-cols-3 gap-3">
-                      <Input placeholder="CEP" required />
+                      <Input placeholder="CEP" value={form.postcode} onChange={set("postcode")} required />
                       <div className="col-span-2" />
                     </div>
                     <div className="grid grid-cols-4 gap-3">
                       <Input
                         placeholder="Rua"
                         className="col-span-3"
+                        value={form.address}
+                        onChange={set("address")}
                         required
                       />
-                      <Input placeholder="Nº" required />
+                      <Input placeholder="Nº" value={form.number} onChange={set("number")} required />
                     </div>
-                    <Input placeholder="Complemento (opcional)" />
+                    <Input placeholder="Complemento (opcional)" value={form.complement} onChange={set("complement")} />
                     <div className="grid grid-cols-3 gap-3">
-                      <Input placeholder="Bairro" required />
-                      <Input placeholder="Cidade" required />
-                      <Input placeholder="UF" required />
+                      <Input placeholder="Bairro" value={form.neighborhood} onChange={set("neighborhood")} required />
+                      <Input placeholder="Cidade" value={form.city} onChange={set("city")} required />
+                      <Input placeholder="UF" value={form.state} onChange={set("state")} required />
                     </div>
                   </section>
 
@@ -300,9 +344,14 @@ const Checkout = () => {
                       </div>
                     </div>
 
-                    <Button type="submit" className="w-full h-12 text-base gap-2" size="lg">
+                    <Button
+                      type="submit"
+                      className="w-full h-12 text-base gap-2"
+                      size="lg"
+                      disabled={createOrder.isPending}
+                    >
                       <Lock className="h-4 w-4" />
-                      Confirmar Pedido
+                      {createOrder.isPending ? "Processando..." : "Confirmar Pedido"}
                     </Button>
 
                     <div className="flex items-center justify-center gap-2 text-xs text-muted-foreground">
@@ -334,7 +383,7 @@ const Checkout = () => {
                   Número do pedido
                 </p>
                 <p className="text-lg font-bold font-mono text-foreground">
-                  #LUM-{Math.floor(Math.random() * 90000 + 10000)}
+                  #{orderId ?? "---"}
                 </p>
               </div>
               <div className="flex gap-3 justify-center">

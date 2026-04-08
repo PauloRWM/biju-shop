@@ -2,7 +2,8 @@ import { useState, useEffect, useCallback } from "react";
 import { useSearchParams, Link } from "react-router-dom";
 import Layout from "@/components/layout/Layout";
 import ProductCard from "@/components/ProductCard";
-import { products, categories } from "@/data/products";
+import LoadingSpinner from "@/components/LoadingSpinner";
+import { useProducts, useCategories } from "@/hooks/useProducts";
 import { Button } from "@/components/ui/button";
 import { ArrowRight, Truck, Shield, RotateCcw, ChevronLeft, ChevronRight } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
@@ -57,14 +58,16 @@ const Index = () => {
     emblaApi.on("reInit", onSelect);
   }, [emblaApi, onSelect]);
 
-  const filtered = products.filter((p) => {
-    const matchesCategory = activeCategory === "Todos" || p.category === activeCategory;
-    const matchesQuery = !queryParam || 
-      p.name.toLowerCase().includes(queryParam) || 
-      p.description.toLowerCase().includes(queryParam) ||
-      p.category.toLowerCase().includes(queryParam);
-    return matchesCategory && matchesQuery;
+  const { data: productsPage, isLoading: loadingProducts } = useProducts({
+    category: activeCategory !== "Todos" ? activeCategory : undefined,
+    search: queryParam || undefined,
+    per_page: 40,
   });
+
+  const { data: apiCategories } = useCategories();
+
+  const allCategories = ["Todos", ...(apiCategories?.map((c) => c.name) ?? [])];
+  const filtered = productsPage?.products ?? [];
 
   const scrollPrev = () => emblaApi && emblaApi.scrollPrev();
   const scrollNext = () => emblaApi && emblaApi.scrollNext();
@@ -190,13 +193,13 @@ const Index = () => {
             )}
           </div>
           <span className="text-sm text-muted-foreground bg-muted px-3 py-1 rounded-full w-fit">
-            {filtered.length} {filtered.length === 1 ? "produto" : "produtos"}
+            {productsPage?.total ?? filtered.length} {(productsPage?.total ?? filtered.length) === 1 ? "produto" : "produtos"}
           </span>
         </div>
 
         {/* Category filter */}
         <div className="flex gap-2 mb-8 overflow-x-auto pb-2">
-          {categories.map((cat) => (
+          {allCategories.map((cat) => (
             <Button
               key={cat}
               variant={activeCategory === cat ? "default" : "outline"}
@@ -210,13 +213,17 @@ const Index = () => {
         </div>
 
         {/* Grid */}
-        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 md:gap-6">
-          {filtered.map((product) => (
-            <ProductCard key={product.id} product={product} />
-          ))}
-        </div>
+        {loadingProducts ? (
+          <LoadingSpinner />
+        ) : (
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 md:gap-6">
+            {filtered.map((product) => (
+              <ProductCard key={product.id} product={product} />
+            ))}
+          </div>
+        )}
 
-        {filtered.length === 0 && (
+        {!loadingProducts && filtered.length === 0 && (
           <div className="text-center py-16">
             <p className="text-muted-foreground">Nenhum produto encontrado nesta categoria.</p>
           </div>
