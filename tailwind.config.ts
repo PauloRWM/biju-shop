@@ -87,6 +87,15 @@ export default {
         "accordion-down": "accordion-down 0.2s ease-out",
         "accordion-up": "accordion-up 0.2s ease-out",
       },
+      fontFamily: {
+        display: ['Jost', 'sans-serif'],
+        body: ['Lato', 'sans-serif'],
+      },
+      boxShadow: {
+        'card': '0 2px 12px -2px rgba(0,0,0,0.07), 0 1px 3px rgba(0,0,0,0.04)',
+        'card-hover': '0 12px 32px -4px rgba(0,0,0,0.13), 0 4px 10px rgba(0,0,0,0.06)',
+        'soft': '0 4px 20px rgba(0,0,0,0.06)',
+      },
     },
   },
   plugins: [require("tailwindcss-animate")],

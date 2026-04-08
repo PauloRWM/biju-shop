@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Jost:wght@300;400;500;600;700&family=Lato:wght@300;400;700;900&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Jost:ital,wght@0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,700&family=Lato:wght@300;400;700;900&display=swap');
 
 @tailwind base;
 @tailwind components;
@@ -6,35 +6,39 @@
 
 @layer base {
   :root {
-    --background: 30 25% 97%;
-    --foreground: 30 10% 12%;
+    /* Base */
+    --background: 32 30% 97%;
+    --foreground: 25 15% 10%;
 
-    --card: 30 20% 99%;
-    --card-foreground: 30 10% 12%;
+    --card: 0 0% 100%;
+    --card-foreground: 25 15% 10%;
 
-    --popover: 30 20% 99%;
-    --popover-foreground: 30 10% 12%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 25 15% 10%;
 
-    --primary: 30 60% 42%;
-    --primary-foreground: 30 25% 97%;
+    /* Primary — bronze dourado mais rico */
+    --primary: 32 72% 38%;
+    --primary-foreground: 32 30% 97%;
 
-    --secondary: 30 15% 92%;
-    --secondary-foreground: 30 10% 20%;
+    --secondary: 32 18% 93%;
+    --secondary-foreground: 25 12% 22%;
 
-    --muted: 30 12% 94%;
-    --muted-foreground: 30 8% 50%;
+    --muted: 30 14% 94%;
+    --muted-foreground: 30 8% 48%;
 
-    --accent: 12 60% 55%;
+    /* Accent — terracota suave */
+    --accent: 14 65% 52%;
     --accent-foreground: 0 0% 100%;
 
-    --destructive: 0 84.2% 60.2%;
-    --destructive-foreground: 210 40% 98%;
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 0 0% 100%;
 
-    --border: 30 15% 88%;
-    --input: 30 15% 88%;
-    --ring: 30 60% 42%;
+    --border: 30 18% 87%;
+    --input: 30 18% 87%;
+    --ring: 32 72% 38%;
 
-    --radius: 0.5rem;
+    /* Radius 2026: mais arredondado */
+    --radius: 0.75rem;
 
     --sidebar-background: 0 0% 98%;
     --sidebar-foreground: 240 5.3% 26.1%;
@@ -45,44 +49,49 @@
     --sidebar-border: 220 13% 91%;
     --sidebar-ring: 217.2 91.2% 59.8%;
 
-    --gold: 38 70% 55%;
-    --gold-light: 38 50% 85%;
-    --rose: 340 45% 65%;
-    --green: 145 63% 32%;
+    --gold: 38 72% 52%;
+    --gold-light: 38 55% 88%;
+    --rose: 340 48% 63%;
+    --green: 148 65% 30%;
+
+    /* Gradiente brand */
+    --gradient-primary: linear-gradient(135deg, hsl(32 72% 38%), hsl(14 65% 52%));
+    --gradient-subtle: linear-gradient(135deg, hsl(32 30% 97%), hsl(32 20% 93%));
   }
 
   .dark {
-    --background: 30 10% 8%;
-    --foreground: 30 15% 92%;
+    --background: 25 12% 7%;
+    --foreground: 30 18% 93%;
 
-    --card: 30 8% 12%;
-    --card-foreground: 30 15% 92%;
+    --card: 25 10% 11%;
+    --card-foreground: 30 18% 93%;
 
-    --popover: 30 8% 12%;
-    --popover-foreground: 30 15% 92%;
+    --popover: 25 10% 11%;
+    --popover-foreground: 30 18% 93%;
 
-    --primary: 30 55% 50%;
-    --primary-foreground: 30 10% 8%;
+    --primary: 32 65% 52%;
+    --primary-foreground: 25 12% 7%;
 
-    --secondary: 30 8% 18%;
-    --secondary-foreground: 30 15% 92%;
+    --secondary: 25 8% 17%;
+    --secondary-foreground: 30 18% 93%;
 
-    --muted: 30 8% 18%;
-    --muted-foreground: 30 10% 55%;
+    --muted: 25 8% 17%;
+    --muted-foreground: 30 10% 52%;
 
-    --accent: 12 55% 50%;
+    --accent: 14 58% 48%;
     --accent-foreground: 0 0% 100%;
 
-    --destructive: 0 62.8% 30.6%;
+    --destructive: 0 63% 31%;
     --destructive-foreground: 210 40% 98%;
 
-    --border: 30 8% 20%;
-    --input: 30 8% 20%;
-    --ring: 30 55% 50%;
+    --border: 25 8% 19%;
+    --input: 25 8% 19%;
+    --ring: 32 65% 52%;
 
-    --gold: 38 65% 50%;
-    --gold-light: 38 30% 25%;
-    --rose: 340 40% 55%;
+    --gold: 38 68% 48%;
+    --gold-light: 38 32% 22%;
+    --rose: 340 42% 52%;
+    --green: 148 60% 38%;
   }
 }
 
@@ -90,11 +99,26 @@
   * {
     @apply border-border;
   }
+  html {
+    scroll-behavior: smooth;
+  }
   body {
-    @apply bg-background text-foreground;
+    @apply bg-background text-foreground antialiased;
     font-family: 'Lato', sans-serif;
   }
-  h1, h2, h3, h4 {
+  h1, h2, h3, h4, h5 {
     font-family: 'Jost', sans-serif;
+  }
+}
+
+@layer utilities {
+  .gradient-brand {
+    background: var(--gradient-primary);
+  }
+  .gradient-subtle {
+    background: var(--gradient-subtle);
+  }
+  .text-balance {
+    text-wrap: balance;
   }
 }
