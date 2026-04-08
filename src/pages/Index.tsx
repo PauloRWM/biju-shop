@@ -347,7 +347,7 @@ const Index = () => {
               <a key={i} href="#" className="group relative aspect-square overflow-hidden bg-muted">
                 <img src={img} alt={`Instagram ${i + 1}`} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" loading="lazy" />
                 <div className="absolute inset-0 bg-foreground/0 group-hover:bg-foreground/20 transition-colors flex items-center justify-center">
-                  <Instagram className="h-5 w-5 text-white opacity-0 group-hover:opacity-100 transition-opacity" />
+                  <Heart className="h-5 w-5 text-white opacity-0 group-hover:opacity-100 transition-opacity" />
                 </div>
               </a>
             ))}
