@@ -4,31 +4,34 @@ import Layout from "@/components/layout/Layout";
 import ProductCard from "@/components/ProductCard";
 import { products, categories } from "@/data/products";
 import { Button } from "@/components/ui/button";
-import { ArrowRight, Truck, Shield, RotateCcw, ChevronLeft, ChevronRight } from "lucide-react";
+import { ArrowRight, Truck, Shield, RotateCcw, ChevronLeft, ChevronRight, Sparkles } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import useEmblaCarousel from "embla-carousel-react";
 import Autoplay from "embla-carousel-autoplay";
 
 const banners = [
   {
-    image: "/banner-1.png",
-    title: "Coleção de Luxo",
-    subtitle: "A elegância que você merece",
-    description: "Peças exclusivas banhadas a ouro com acabamento premium e garantia de qualidade.",
+    gradient: "from-[#1a1a1a] via-[#2d2520] to-[#3d2e1f]",
+    accentColor: "text-[hsl(38,70%,55%)]",
+    tag: "Nova Coleção",
+    title: "Elegância\nAtemporal",
+    description: "Peças exclusivas banhadas a ouro 18k com acabamento artesanal e garantia de qualidade.",
     cta: "Explorar Coleção",
   },
   {
-    image: "/banner-2.png",
-    title: "Design Atemporal",
-    subtitle: "Brilhe em cada detalhe",
-    description: "Nossos brincos e acessórios são desenhados para realçar sua beleza natural em qualquer ocasião.",
-    cta: "Ver Detalhes",
+    gradient: "from-[#2a1a2a] via-[#1f1525] to-[#1a1020]",
+    accentColor: "text-[hsl(340,45%,65%)]",
+    tag: "Destaque",
+    title: "Brilhe em\nCada Detalhe",
+    description: "Brincos e acessórios desenhados para realçar sua beleza natural em qualquer ocasião.",
+    cta: "Ver Coleção",
   },
   {
-    image: "/banner-3.png",
-    title: "Presentes Inesquecíveis",
-    subtitle: "Momentos que marcam",
-    description: "Encontre o presente perfeito em nossos conjuntos exclusivos de anéis e pulseiras.",
+    gradient: "from-[#1a2520] via-[#152520] to-[#0f1f1a]",
+    accentColor: "text-[hsl(145,50%,55%)]",
+    tag: "Presente Perfeito",
+    title: "Momentos\nque Marcam",
+    description: "Conjuntos exclusivos pensados para quem você ama. Embalagem especial inclusa.",
     cta: "Comprar Agora",
   },
 ];
@@ -39,7 +42,7 @@ const Index = () => {
   const queryParam = searchParams.get("q")?.toLowerCase() || "";
   const [activeCategory, setActiveCategory] = useState(catParam || "Todos");
   const [selectedIndex, setSelectedIndex] = useState(0);
-  
+
   const [emblaRef, emblaApi] = useEmblaCarousel(
     { loop: true, skipSnaps: false },
     [Autoplay({ delay: 5000, stopOnInteraction: false })]
@@ -57,10 +60,15 @@ const Index = () => {
     emblaApi.on("reInit", onSelect);
   }, [emblaApi, onSelect]);
 
+  useEffect(() => {
+    if (catParam) setActiveCategory(catParam);
+  }, [catParam]);
+
   const filtered = products.filter((p) => {
     const matchesCategory = activeCategory === "Todos" || p.category === activeCategory;
-    const matchesQuery = !queryParam || 
-      p.name.toLowerCase().includes(queryParam) || 
+    const matchesQuery =
+      !queryParam ||
+      p.name.toLowerCase().includes(queryParam) ||
       p.description.toLowerCase().includes(queryParam) ||
       p.category.toLowerCase().includes(queryParam);
     return matchesCategory && matchesQuery;
@@ -73,94 +81,135 @@ const Index = () => {
   return (
     <Layout>
       {/* Banner Carousel */}
-      <section className="relative bg-muted/30">
+      <section className="relative">
         <div className="overflow-hidden" ref={emblaRef}>
           <div className="flex">
             {banners.map((banner, index) => (
               <div key={index} className="flex-[0_0_100%] min-w-0">
-                <div className="relative h-[65vh] md:h-[550px] min-h-[400px]">
-                  <img
-                    src={banner.image}
-                    alt={banner.title}
-                    className="w-full h-full object-cover"
-                  />
-                  <div className="absolute inset-0 bg-gradient-to-r from-black/60 via-black/20 to-transparent" />
-                  
-                  <div className="container absolute inset-0 left-1/2 -translate-x-1/2 flex items-center px-4 md:px-8">
+                <div className={`relative h-[70vh] md:h-[600px] min-h-[480px] bg-gradient-to-br ${banner.gradient} flex items-center overflow-hidden`}>
+                  {/* Decorative elements */}
+                  <div className="absolute inset-0 opacity-[0.03]" style={{ backgroundImage: 'radial-gradient(circle at 1px 1px, white 1px, transparent 0)', backgroundSize: '40px 40px' }} />
+                  <div className="absolute top-20 right-20 w-[500px] h-[500px] rounded-full bg-white/[0.02] blur-3xl" />
+                  <div className="absolute -bottom-20 -left-20 w-[300px] h-[300px] rounded-full bg-white/[0.02] blur-3xl" />
+
+                  <div className="container mx-auto px-6 md:px-12 relative z-10">
                     <AnimatePresence mode="wait">
                       {selectedIndex === index && (
-                        <div className="max-w-xl">
+                        <motion.div
+                          key={index}
+                          initial={{ opacity: 0 }}
+                          animate={{ opacity: 1 }}
+                          exit={{ opacity: 0 }}
+                          transition={{ duration: 0.5 }}
+                          className="max-w-2xl"
+                        >
+                          {/* Tag */}
                           <motion.div
-                            initial={{ opacity: 0, x: -30 }}
-                            animate={{ opacity: 1, x: 0 }}
-                            exit={{ opacity: 0, x: 20 }}
-                            transition={{ duration: 0.6, ease: "easeOut" }}
-                            className="bg-background/10 backdrop-blur-md p-6 md:p-10 rounded-2xl border border-white/10 shadow-2xl"
+                            initial={{ opacity: 0, y: 15 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            transition={{ delay: 0.1, duration: 0.5 }}
+                            className="flex items-center gap-2 mb-6"
                           >
-                            <span className="text-xs md:text-sm font-bold uppercase tracking-[0.2em] text-primary mb-3 block">
-                              {banner.title}
+                            <Sparkles className={`h-3.5 w-3.5 ${banner.accentColor}`} />
+                            <span className={`text-xs font-sans font-medium uppercase tracking-[0.25em] ${banner.accentColor}`}>
+                              {banner.tag}
                             </span>
-                            <h2 className="font-display text-3xl md:text-5xl lg:text-6xl font-black text-white leading-[1.1] mb-4 drop-shadow-sm">
-                              {banner.subtitle}
-                            </h2>
-                            <p className="text-white/90 text-sm md:text-lg mb-8 max-w-md leading-relaxed">
-                              {banner.description}
-                            </p>
-                            <div className="flex flex-wrap gap-4">
-                              <Button size="lg" className="h-12 px-8 rounded-full shadow-lg hover:shadow-primary/30 transition-all duration-300">
-                                {banner.cta} <ArrowRight className="ml-2 h-5 w-5" />
-                              </Button>
-                              <Button variant="outline" size="lg" className="h-12 px-8 rounded-full border-white/20 text-white bg-white/5 backdrop-blur-sm hover:bg-white/10 transition-all duration-300">
-                                Saiba Mais
-                              </Button>
-                            </div>
+                            <div className={`h-[1px] w-12 ${banner.accentColor} opacity-40`} style={{ background: 'currentColor' }} />
                           </motion.div>
-                        </div>
+
+                          {/* Title */}
+                          <motion.h2
+                            initial={{ opacity: 0, y: 20 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            transition={{ delay: 0.2, duration: 0.6 }}
+                            className="font-display text-[clamp(2.5rem,6vw,5rem)] font-extralight text-white leading-[1.05] mb-6 whitespace-pre-line"
+                          >
+                            {banner.title}
+                          </motion.h2>
+
+                          {/* Description */}
+                          <motion.p
+                            initial={{ opacity: 0, y: 15 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            transition={{ delay: 0.35, duration: 0.5 }}
+                            className="text-white/50 text-sm md:text-base font-sans leading-relaxed mb-10 max-w-md"
+                          >
+                            {banner.description}
+                          </motion.p>
+
+                          {/* CTAs */}
+                          <motion.div
+                            initial={{ opacity: 0, y: 15 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            transition={{ delay: 0.5, duration: 0.5 }}
+                            className="flex flex-wrap items-center gap-6"
+                          >
+                            <Button
+                              size="lg"
+                              className="h-12 px-8 rounded-none bg-white text-foreground hover:bg-white/90 font-sans text-xs uppercase tracking-[0.15em] font-medium transition-all duration-300"
+                            >
+                              {banner.cta}
+                              <ArrowRight className="ml-3 h-4 w-4" />
+                            </Button>
+                            <button className="text-white/40 hover:text-white/70 font-sans text-xs uppercase tracking-[0.15em] transition-colors duration-300 underline underline-offset-4 decoration-white/20 hover:decoration-white/40">
+                              Saiba Mais
+                            </button>
+                          </motion.div>
+                        </motion.div>
                       )}
                     </AnimatePresence>
+                  </div>
+
+                  {/* Slide counter */}
+                  <div className="absolute bottom-8 right-8 md:right-12 text-white/20 font-display text-sm tracking-widest">
+                    <span className="text-white/60">{String(index + 1).padStart(2, "0")}</span>
+                    <span className="mx-2">/</span>
+                    <span>{String(banners.length).padStart(2, "0")}</span>
                   </div>
                 </div>
               </div>
             ))}
           </div>
         </div>
-        
+
         {/* Navigation arrows */}
         <div className="hidden md:block">
           <button
             onClick={scrollPrev}
-            className="absolute left-6 top-1/2 -translate-y-1/2 w-12 h-12 rounded-full bg-white/10 backdrop-blur-md border border-white/20 text-white hover:bg-white/20 flex items-center justify-center transition-all duration-300 z-10"
+            className="absolute left-8 top-1/2 -translate-y-1/2 w-11 h-11 border border-white/15 text-white/40 hover:text-white hover:border-white/30 flex items-center justify-center transition-all duration-300 z-10"
             aria-label="Anterior"
           >
-            <ChevronLeft className="h-6 w-6" />
+            <ChevronLeft className="h-5 w-5" />
           </button>
           <button
             onClick={scrollNext}
-            className="absolute right-6 top-1/2 -translate-y-1/2 w-12 h-12 rounded-full bg-white/10 backdrop-blur-md border border-white/20 text-white hover:bg-white/20 flex items-center justify-center transition-all duration-300 z-10"
+            className="absolute right-8 top-1/2 -translate-y-1/2 w-11 h-11 border border-white/15 text-white/40 hover:text-white hover:border-white/30 flex items-center justify-center transition-all duration-300 z-10"
             aria-label="Próximo"
           >
-            <ChevronRight className="h-6 w-6" />
+            <ChevronRight className="h-5 w-5" />
           </button>
         </div>
-        
-        {/* Dots */}
-        <div className="absolute bottom-10 left-1/2 -translate-x-1/2 flex gap-3 z-10">
+
+        {/* Progress bar dots */}
+        <div className="absolute bottom-8 left-1/2 -translate-x-1/2 flex gap-4 z-10">
           {banners.map((_, index) => (
             <button
               key={index}
               onClick={() => scrollTo(index)}
-              className={`h-1.5 transition-all duration-500 rounded-full ${
-                selectedIndex === index ? "w-10 bg-primary" : "w-3 bg-white/40 hover:bg-white/60"
-              }`}
+              className="group relative h-6 flex items-center"
               aria-label={`Ir para slide ${index + 1}`}
-            />
+            >
+              <span className={`block h-[2px] transition-all duration-700 ${
+                selectedIndex === index ? "w-12 bg-white" : "w-6 bg-white/20 group-hover:bg-white/40"
+              }`} />
+            </button>
           ))}
         </div>
       </section>
 
       {/* Trust badges */}
-      <section className="border-b">
-        <div className="container mx-auto px-4 py-6">
+      <section className="border-b border-border/50">
+        <div className="container mx-auto px-4 py-5">
           <div className="grid grid-cols-3 gap-4 text-center">
             {[
               { icon: Truck, text: "Frete grátis acima de R$ 99" },
@@ -168,8 +217,10 @@ const Index = () => {
               { icon: RotateCcw, text: "Troca em até 30 dias" },
             ].map((item) => (
               <div key={item.text} className="flex flex-col md:flex-row items-center gap-2 justify-center">
-                <item.icon className="h-5 w-5 text-primary" />
-                <span className="text-xs md:text-sm text-muted-foreground">{item.text}</span>
+                <item.icon className="h-4 w-4 text-muted-foreground" strokeWidth={1.5} />
+                <span className="text-[11px] md:text-xs text-muted-foreground font-sans tracking-wide">
+                  {item.text}
+                </span>
               </div>
             ))}
           </div>
@@ -177,35 +228,34 @@ const Index = () => {
       </section>
 
       {/* Products */}
-      <section className="container mx-auto px-4 py-12 min-h-[400px]">
-        <div className="flex flex-col md:flex-row md:items-center justify-between mb-8 gap-4">
+      <section className="container mx-auto px-4 py-14 min-h-[400px]">
+        <div className="flex flex-col md:flex-row md:items-end justify-between mb-10 gap-4">
           <div>
-            <h2 className="font-display text-2xl md:text-3xl font-bold text-foreground">
-              {queryParam ? `Resultados para: "${queryParam}"` : "Nossos Produtos"}
+            <h2 className="font-display text-2xl md:text-3xl font-light tracking-wide text-foreground">
+              {queryParam ? `Resultados para "${queryParam}"` : "Curadoria"}
             </h2>
-            {queryParam && (
-              <p className="text-sm text-muted-foreground mt-1">
-                Mostrando resultados em {activeCategory}
-              </p>
-            )}
+            <p className="text-sm text-muted-foreground mt-1 font-sans">
+              {queryParam
+                ? `${filtered.length} ${filtered.length === 1 ? "item encontrado" : "itens encontrados"}`
+                : "Peças selecionadas para você"}
+            </p>
           </div>
-          <span className="text-sm text-muted-foreground bg-muted px-3 py-1 rounded-full w-fit">
-            {filtered.length} {filtered.length === 1 ? "produto" : "produtos"}
-          </span>
         </div>
 
         {/* Category filter */}
-        <div className="flex gap-2 mb-8 overflow-x-auto pb-2">
+        <div className="flex gap-1 mb-10 overflow-x-auto pb-2 scrollbar-hide">
           {categories.map((cat) => (
-            <Button
+            <button
               key={cat}
-              variant={activeCategory === cat ? "default" : "outline"}
-              size="sm"
               onClick={() => setActiveCategory(cat)}
-              className="whitespace-nowrap"
+              className={`whitespace-nowrap px-5 py-2 text-xs font-sans uppercase tracking-[0.12em] transition-all duration-300 border ${
+                activeCategory === cat
+                  ? "bg-foreground text-background border-foreground"
+                  : "bg-transparent text-muted-foreground border-border hover:border-foreground/30 hover:text-foreground"
+              }`}
             >
               {cat}
-            </Button>
+            </button>
           ))}
         </div>
 
@@ -217,30 +267,33 @@ const Index = () => {
         </div>
 
         {filtered.length === 0 && (
-          <div className="text-center py-16">
-            <p className="text-muted-foreground">Nenhum produto encontrado nesta categoria.</p>
+          <div className="text-center py-20">
+            <p className="text-muted-foreground font-sans text-sm">
+              Nenhum produto encontrado.
+            </p>
           </div>
         )}
       </section>
 
-      {/* CTA */}
-      <section className="bg-primary text-primary-foreground">
-        <div className="container mx-auto px-4 py-12 text-center">
-          <h2 className="font-display text-2xl md:text-3xl font-bold mb-3">
+      {/* Newsletter CTA */}
+      <section className="bg-foreground text-background">
+        <div className="container mx-auto px-4 py-16 text-center">
+          <p className="text-xs font-sans uppercase tracking-[0.2em] text-background/40 mb-4">Newsletter</p>
+          <h2 className="font-display text-2xl md:text-3xl font-light tracking-wide mb-3">
             Receba novidades em primeira mão
           </h2>
-          <p className="text-primary-foreground/80 mb-6 max-w-md mx-auto">
-            Cadastre-se e ganhe 10% de desconto na primeira compra.
+          <p className="text-background/50 mb-8 max-w-md mx-auto text-sm font-sans">
+            Cadastre-se e ganhe 10% de desconto na sua primeira compra.
           </p>
-          <div className="flex gap-2 max-w-sm mx-auto">
+          <div className="flex gap-0 max-w-sm mx-auto">
             <input
               type="email"
-              placeholder="Seu e-mail"
-              className="flex-1 h-10 rounded-md border border-primary-foreground/20 bg-primary-foreground/10 px-3 text-sm text-primary-foreground placeholder:text-primary-foreground/50 focus:outline-none focus:ring-2 focus:ring-primary-foreground/30"
+              placeholder="Seu melhor e-mail"
+              className="flex-1 h-11 px-4 bg-background/10 border border-background/15 border-r-0 text-sm text-background placeholder:text-background/30 focus:outline-none focus:bg-background/15 font-sans transition-colors"
             />
-            <Button variant="secondary" size="default">
+            <button className="h-11 px-6 bg-background text-foreground text-xs font-sans uppercase tracking-[0.12em] font-medium hover:bg-background/90 transition-colors">
               Cadastrar
-            </Button>
+            </button>
           </div>
         </div>
       </section>
