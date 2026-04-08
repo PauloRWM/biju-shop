@@ -3,8 +3,8 @@ import react from "@vitejs/plugin-react-swc";
 import path from "path";
 
 // https://vitejs.dev/config/
-export default defineConfig({
-  base: '/biju-shop/',
+export default defineConfig(({ mode }) => ({
+  base: mode === 'production' ? '/biju-shop/' : '/',
   server: {
     host: "::",
     port: parseInt(process.env.PORT || '8080'),
@@ -19,4 +19,4 @@ export default defineConfig({
     },
     dedupe: ["react", "react-dom", "react/jsx-runtime", "react/jsx-dev-runtime", "@tanstack/react-query", "@tanstack/query-core"],
   },
-});
+}));

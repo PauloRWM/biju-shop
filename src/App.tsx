@@ -19,7 +19,7 @@ const App = () => (
       <CartProvider>
         <Toaster />
         <Sonner />
-        <BrowserRouter basename="/biju-shop">
+        <BrowserRouter basename={import.meta.env.BASE_URL}>
           <Routes>
             <Route path="/" element={<Index />} />
             <Route path="/produto/:id" element={<ProductDetail />} />
