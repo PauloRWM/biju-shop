@@ -31,7 +31,7 @@ const ProductDetail = () => {
     category: product?.category,
     per_page: 5,
   });
-  const { addItem } = useCart();
+  const { addItem, openCart } = useCart();
   const [selectedImage, setSelectedImage] = useState(0);
   const [qty, setQty] = useState(1);
   const [liked, setLiked] = useState(false);
@@ -75,6 +75,7 @@ const ProductDetail = () => {
 
   const handleAdd = () => {
     for (let i = 0; i < qty; i++) addItem(product);
+    openCart();
     toast.success(
       `${qty}x ${product.name} adicionado ao carrinho!`,
       { duration: 2500 }

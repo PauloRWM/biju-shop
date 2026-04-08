@@ -13,7 +13,7 @@ interface Props {
 }
 
 const ProductCard = ({ product, index = 0, featured = false }: Props) => {
-  const { addItem } = useCart();
+  const { addItem, openCart } = useCart();
   const [liked, setLiked] = useState(false);
   const [imgLoaded, setImgLoaded] = useState(false);
 
@@ -27,6 +27,7 @@ const ProductCard = ({ product, index = 0, featured = false }: Props) => {
     e.preventDefault();
     e.stopPropagation();
     addItem(product);
+    openCart();
     toast.success(`${product.name} adicionado ao carrinho!`, { duration: 2000 });
   };
 

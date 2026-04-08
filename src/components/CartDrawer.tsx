@@ -13,14 +13,14 @@ import {
 import { ShoppingBag, Trash2, Plus, Minus, ArrowRight } from "lucide-react";
 
 const CartDrawer = () => {
-  const { items, removeItem, updateQuantity, totalItems, totalPrice } = useCart();
+  const { items, removeItem, updateQuantity, totalItems, totalPrice, isOpen, openCart, closeCart } = useCart();
 
   const pixTotal = totalPrice * 0.9;
 
   return (
-    <Sheet>
+    <Sheet open={isOpen} onOpenChange={(v) => v ? openCart() : closeCart()}>
       <SheetTrigger asChild>
-        <Button variant="ghost" size="icon" className="relative">
+        <Button variant="ghost" size="icon" className="relative" onClick={openCart}>
           <ShoppingBag className="h-5 w-5" />
           {totalItems > 0 && (
             <span className="absolute -top-1 -right-1 bg-accent text-accent-foreground text-xs w-5 h-5 rounded-full flex items-center justify-center font-semibold">
@@ -30,7 +30,7 @@ const CartDrawer = () => {
         </Button>
       </SheetTrigger>
 
-      <SheetContent className="flex flex-col w-full sm:max-w-md p-0">
+      <SheetContent className="flex flex-col w-full sm:max-w-md !p-0 h-full overflow-hidden">
         <SheetHeader className="px-4 pt-4 pb-3 border-b">
           <SheetTitle className="font-display text-lg">
             Carrinho ({totalItems})
@@ -133,6 +133,12 @@ const CartDrawer = () => {
                     Ver carrinho completo
                   </Button>
                 </Link>
+              </SheetClose>
+
+              <SheetClose asChild>
+                <button className="w-full text-xs text-muted-foreground hover:text-foreground transition-colors py-1">
+                  Continuar comprando
+                </button>
               </SheetClose>
             </div>
           </>
