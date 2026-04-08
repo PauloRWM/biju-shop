@@ -1,5 +1,6 @@
 import { useParams, Link } from "react-router-dom";
 import { useProduct, useProducts } from "@/hooks/useProducts";
+import { products as fallbackProducts } from "@/data/products";
 import Layout from "@/components/layout/Layout";
 import { useCart } from "@/contexts/CartContext";
 import { Button } from "@/components/ui/button";
@@ -24,7 +25,8 @@ import { toast } from "sonner";
 
 const ProductDetail = () => {
   const { id } = useParams();
-  const { data: product, isLoading, isError } = useProduct(id);
+  const { data: apiProduct, isLoading, isError } = useProduct(id);
+  const product = apiProduct ?? (isError ? fallbackProducts.find((p) => p.id === id) : undefined);
   const { data: relatedPage } = useProducts({
     category: product?.category,
     per_page: 5,
@@ -39,7 +41,7 @@ const ProductDetail = () => {
     setQty(1);
   }, [id]);
 
-  if (isLoading) {
+  if (isLoading && !product) {
     return (
       <Layout>
         <LoadingSpinner />
@@ -62,9 +64,10 @@ const ProductDetail = () => {
     );
   }
 
-  const related = (relatedPage?.products ?? [])
-    .filter((p) => p.id !== product.id)
-    .slice(0, 4);
+  const related = (
+    relatedPage?.products ??
+    fallbackProducts.filter((p) => p.category === product.category && p.id !== product.id)
+  ).filter((p) => p.id !== product.id).slice(0, 4);
   const discount = product.originalPrice
     ? Math.round((1 - product.price / product.originalPrice) * 100)
     : null;

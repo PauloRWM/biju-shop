@@ -6,7 +6,8 @@ export function useProducts(params: ProductsParams = {}) {
     queryKey: ['products', params],
     queryFn: () => fetchProducts(params),
     placeholderData: keepPreviousData,
-    staleTime: 60_000, // 1 min
+    staleTime: 60_000,
+    retry: false,
   });
 }
 
@@ -16,6 +17,7 @@ export function useProduct(id: string | undefined) {
     queryFn: () => fetchProduct(id!),
     enabled: !!id,
     staleTime: 60_000,
+    retry: false,
   });
 }
 
@@ -23,6 +25,7 @@ export function useCategories() {
   return useQuery({
     queryKey: ['categories'],
     queryFn: fetchCategories,
-    staleTime: 5 * 60_000, // 5 min
+    staleTime: 5 * 60_000,
+    retry: false,
   });
 }

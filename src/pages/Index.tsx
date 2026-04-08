@@ -4,6 +4,7 @@ import Layout from "@/components/layout/Layout";
 import ProductCard from "@/components/ProductCard";
 import LoadingSpinner from "@/components/LoadingSpinner";
 import { useProducts, useCategories } from "@/hooks/useProducts";
+import { products as fallbackProducts, categories as fallbackCategories } from "@/data/products";
 import { Button } from "@/components/ui/button";
 import { ArrowRight, Truck, Shield, RotateCcw, ChevronLeft, ChevronRight } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
@@ -58,7 +59,7 @@ const Index = () => {
     emblaApi.on("reInit", onSelect);
   }, [emblaApi, onSelect]);
 
-  const { data: productsPage, isLoading: loadingProducts } = useProducts({
+  const { data: productsPage, isLoading: loadingProducts, isError } = useProducts({
     category: activeCategory !== "Todos" ? activeCategory : undefined,
     search: queryParam || undefined,
     per_page: 40,
@@ -66,8 +67,21 @@ const Index = () => {
 
   const { data: apiCategories } = useCategories();
 
-  const allCategories = ["Todos", ...(apiCategories?.map((c) => c.name) ?? [])];
-  const filtered = productsPage?.products ?? [];
+  // Fallback para dados locais quando a API não está disponível
+  const apiOk = !isError && (loadingProducts || !!productsPage);
+  const allCategories = apiOk && apiCategories?.length
+    ? ["Todos", ...apiCategories.map((c) => c.name)]
+    : fallbackCategories;
+
+  const filtered = apiOk
+    ? (productsPage?.products ?? [])
+    : fallbackProducts.filter((p) => {
+        const matchesCat = activeCategory === "Todos" || p.category === activeCategory;
+        const matchesQ = !queryParam ||
+          p.name.toLowerCase().includes(queryParam) ||
+          p.description.toLowerCase().includes(queryParam);
+        return matchesCat && matchesQ;
+      });
 
   const scrollPrev = () => emblaApi && emblaApi.scrollPrev();
   const scrollNext = () => emblaApi && emblaApi.scrollNext();
