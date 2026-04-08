@@ -32,8 +32,8 @@ export const products: Product[] = [
     description: "Colar delicado com pingente de coração banhado a ouro 18k. Perfeito para uso diário, trazendo elegância e sofisticação ao seu visual. Corrente ajustável com fecho de lagosta.",
     category: "Colares",
     images: [
-      "https://images.unsplash.com/photo-1599643478518-a784e5dc4c8f?w=600&h=600&fit=crop",
-      "https://images.unsplash.com/photo-1611591437281-460bfbe1220a?w=600&h=600&fit=crop",
+      "https://picsum.photos/seed/colar1/600/600",
+      "https://picsum.photos/seed/colar2/600/600",
     ],
     badge: "Mais Vendido",
     rating: 4.8,
@@ -49,7 +49,7 @@ export const products: Product[] = [
     description: "Brincos de argola média em prata 925. Design clássico e atemporal que combina com qualquer ocasião. Fecho tipo clique para maior segurança.",
     category: "Brincos",
     images: [
-      "https://images.unsplash.com/photo-1535632066927-ab7c9ab60908?w=600&h=600&fit=crop",
+      "https://picsum.photos/seed/brinco1/600/600",
     ],
     rating: 4.6,
     reviews: 89,
@@ -65,7 +65,7 @@ export const products: Product[] = [
     description: "Pulseira com charms de estrelas delicadas. Banhada a ouro rosé, ideal para empilhar com outras pulseiras. Fecho ajustável.",
     category: "Pulseiras",
     images: [
-      "https://images.unsplash.com/photo-1573408301185-9146fe634ad0?w=600&h=600&fit=crop",
+      "https://picsum.photos/seed/pulseira1/600/600",
     ],
     badge: "Promoção",
     rating: 4.9,
@@ -81,7 +81,7 @@ export const products: Product[] = [
     description: "Anel solitário com zircônia brilhante central. Banhado a ouro 18k com acabamento polido. Disponível em vários tamanhos.",
     category: "Anéis",
     images: [
-      "https://images.unsplash.com/photo-1605100804763-247f67b3557e?w=600&h=600&fit=crop",
+      "https://picsum.photos/seed/anel1/600/600",
     ],
     rating: 4.7,
     reviews: 156,
@@ -97,7 +97,7 @@ export const products: Product[] = [
     description: "Conjunto elegante com colar e brincos de pérola sintética. Ideal para ocasiões especiais. Embalagem premium para presente.",
     category: "Conjuntos",
     images: [
-      "https://images.unsplash.com/photo-1515562141589-67f0d569b6fc?w=600&h=600&fit=crop",
+      "https://picsum.photos/seed/conjunto1/600/600",
     ],
     badge: "Presente Ideal",
     rating: 4.9,
@@ -113,7 +113,7 @@ export const products: Product[] = [
     description: "Brincos em formato de gota com cristal azul. Design sofisticado que realça qualquer produção. Base banhada a prata.",
     category: "Brincos",
     images: [
-      "https://images.unsplash.com/photo-1630019852942-f89202989a59?w=600&h=600&fit=crop",
+      "https://picsum.photos/seed/brinco2/600/600",
     ],
     rating: 4.5,
     reviews: 78,
@@ -128,7 +128,7 @@ export const products: Product[] = [
     description: "Choker de corrente grossa estilo chunky. Tendência atual que adiciona personalidade ao look. Banhada a ouro 18k.",
     category: "Colares",
     images: [
-      "https://images.unsplash.com/photo-1611591437281-460bfbe1220a?w=600&h=600&fit=crop",
+      "https://picsum.photos/seed/choker1/600/600",
     ],
     rating: 4.4,
     reviews: 45,
@@ -144,7 +144,7 @@ export const products: Product[] = [
     description: "Pulseira riviera cravejada com zircônias brilhantes. Peça statement que eleva qualquer produção. Fecho com trava de segurança.",
     category: "Pulseiras",
     images: [
-      "https://images.unsplash.com/photo-1611591437281-460bfbe1220a?w=600&h=600&fit=crop",
+      "https://picsum.photos/seed/riviera1/600/600",
     ],
     badge: "Novo",
     rating: 4.8,

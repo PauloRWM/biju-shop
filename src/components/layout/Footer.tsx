@@ -6,7 +6,11 @@ const Footer = () => (
     <div className="container mx-auto px-4 py-12">
       <div className="grid grid-cols-1 md:grid-cols-4 gap-8">
         <div>
-          <h3 className="font-display text-xl font-bold mb-3">Luminária</h3>
+          <img 
+            src="https://wesleybijoux.com.br/wp-content/uploads/2024/08/WhatsApp-Image-2026-01-18-at-17.07.54-e1774703118212.jpeg" 
+            alt="Wesley Bijoux" 
+            className="h-12 w-auto object-contain mb-3"
+          />
           <p className="text-sm text-muted-foreground leading-relaxed">
             Bijuterias artesanais que iluminam seu estilo. Cada peça é feita com carinho e atenção aos detalhes.
           </p>
@@ -45,7 +49,7 @@ const Footer = () => (
         </div>
       </div>
       <div className="border-t mt-8 pt-6 text-center text-xs text-muted-foreground">
-        © 2026 Luminária. Todos os direitos reservados.
+        © 2026 Wesley Bijoux. Todos os direitos reservados.
       </div>
     </div>
   </footer>
