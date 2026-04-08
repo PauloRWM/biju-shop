@@ -5,7 +5,7 @@ import ProductCard from "@/components/ProductCard";
 import LoadingSpinner from "@/components/LoadingSpinner";
 import { useProducts, useCategories } from "@/hooks/useProducts";
 import { products as fallbackProducts, categories as fallbackCategories } from "@/data/products";
-import { ArrowRight, Truck, Shield, RotateCcw, ChevronLeft, ChevronRight, Sparkles, Star, Heart } from "lucide-react";
+import { ArrowRight, Truck, ChevronLeft, ChevronRight, Sparkles, Star, Heart, ShoppingCart, CreditCard as CreditCard2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { motion, AnimatePresence } from "framer-motion";
 import useEmblaCarousel from "embla-carousel-react";
@@ -191,22 +191,21 @@ const Index = () => {
       </section>
 
       {/* ─── Trust badges ─── */}
-      <section className="border-y border-border/50 bg-card/60 backdrop-blur-sm">
-        <div className="container mx-auto px-4 py-5">
-          <div className="grid grid-cols-3 gap-2 md:gap-6">
+      <section className="bg-[hsl(38,60%,95%)]">
+        <div className="container mx-auto px-8 py-8">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 md:gap-12">
             {[
-              { icon: Truck, title: "Frete Grátis", sub: "Acima de R$ 99" },
-              { icon: Shield, title: "6 Meses de Garantia", sub: "Contra defeitos" },
-              { icon: RotateCcw, title: "Troca Grátis", sub: "Em até 30 dias" },
+              { icon: ShoppingCart, title: "ATACADO", sub: "Compre no atacado com o melhor preço" },
+              { icon: Truck, title: "EM TODO BRASIL", sub: "Receba seu produto onde estiver ou retire em nossa loja" },
+              { icon: CreditCard2, title: "PIX E CARTÃO", sub: "Pague suas compras no PIX ou no Cartão" },
             ].map((item) => (
-              <div key={item.title} className="flex flex-col md:flex-row items-center gap-3 justify-center text-center md:text-left">
-                <div className="w-9 h-9 rounded-xl bg-primary/10 flex items-center justify-center shrink-0">
-                  <item.icon className="h-4 w-4 text-primary" />
+              <div key={item.title} className="flex items-center gap-5">
+                <div className="w-12 h-12 rounded-full bg-foreground flex items-center justify-center shrink-0">
+                  <item.icon className="h-5 w-5 text-background" strokeWidth={1.5} />
                 </div>
                 <div>
-                  <p className="text-xs font-bold text-foreground hidden md:block">{item.title}</p>
-                  <p className="text-[11px] text-muted-foreground hidden md:block">{item.sub}</p>
-                  <p className="text-[10px] md:hidden text-muted-foreground font-medium leading-tight">{item.title}</p>
+                  <p className="text-xs font-bold uppercase tracking-[0.12em] text-foreground mb-0.5">{item.title}</p>
+                  <p className="text-[13px] text-muted-foreground leading-snug max-w-[220px]">{item.sub}</p>
                 </div>
               </div>
             ))}
