@@ -1,5 +1,6 @@
 import { useParams, Link } from "react-router-dom";
-import { products } from "@/data/products";
+import { useProduct, useProducts } from "@/hooks/useProducts";
+import { products as fallbackProducts } from "@/data/products";
 import Layout from "@/components/layout/Layout";
 import { useCart } from "@/contexts/CartContext";
 import { Button } from "@/components/ui/button";
@@ -24,22 +25,23 @@ import { toast } from "sonner";
 
 const ProductDetail = () => {
   const { id } = useParams();
-  const product = products.find((p) => p.id === id);
+  const { data: apiProduct, isLoading, isError } = useProduct(id);
+  const product = apiProduct ?? (isError ? fallbackProducts.find((p) => p.id === id) : undefined);
+  const { data: relatedPage } = useProducts({
+    category: product?.category,
+    per_page: 5,
+  });
   const { addItem } = useCart();
   const [selectedImage, setSelectedImage] = useState(0);
   const [qty, setQty] = useState(1);
-  const [loading, setLoading] = useState(true);
   const [liked, setLiked] = useState(false);
 
   useEffect(() => {
-    setLoading(true);
     setSelectedImage(0);
     setQty(1);
-    const timer = setTimeout(() => setLoading(false), 600);
-    return () => clearTimeout(timer);
   }, [id]);
 
-  if (loading) {
+  if (isLoading && !product) {
     return (
       <Layout>
         <LoadingSpinner />
@@ -47,7 +49,7 @@ const ProductDetail = () => {
     );
   }
 
-  if (!product) {
+  if (isError || !product) {
     return (
       <Layout>
         <div className="container mx-auto px-4 py-16 text-center">
@@ -62,13 +64,10 @@ const ProductDetail = () => {
     );
   }
 
-  const sameCategory = products.filter(
-    (p) => p.category === product.category && p.id !== product.id
-  );
-  const otherProducts = products.filter(
-    (p) => p.category !== product.category && p.id !== product.id
-  );
-  const related = [...sameCategory, ...otherProducts].slice(0, 4);
+  const related = (
+    relatedPage?.products ??
+    fallbackProducts.filter((p) => p.category === product.category && p.id !== product.id)
+  ).filter((p) => p.id !== product.id).slice(0, 4);
   const discount = product.originalPrice
     ? Math.round((1 - product.price / product.originalPrice) * 100)
     : null;
