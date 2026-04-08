@@ -129,14 +129,14 @@ const CartDrawer = () => {
 
               <SheetClose asChild>
                 <Link to="/carrinho" className="block">
-                  <Button variant="outline" className="w-full" size="sm">
+                  <button className="w-full h-9 rounded-xl gradient-brand text-white flex items-center justify-center text-xs font-bold hover:opacity-90 transition-opacity">
                     Ver carrinho completo
-                  </Button>
+                  </button>
                 </Link>
               </SheetClose>
 
               <SheetClose asChild>
-                <button className="w-full text-xs text-muted-foreground hover:text-foreground transition-colors py-1">
+                <button className="w-full h-9 rounded-xl gradient-brand text-white flex items-center justify-center text-xs font-bold hover:opacity-90 transition-opacity">
                   Continuar comprando
                 </button>
               </SheetClose>
