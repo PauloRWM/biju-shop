@@ -2,16 +2,13 @@ import { Link } from "react-router-dom";
 import { ShoppingBag, Heart, Eye } from "lucide-react";
 import { Product } from "@/data/products";
 import { useCart } from "@/contexts/CartContext";
-import { Button } from "@/components/ui/button";
 import { motion } from "framer-motion";
 import { useState } from "react";
 import { toast } from "sonner";
 
 interface Props {
   product: Product;
-  /** Para animação staggered no grid */
   index?: number;
-  /** Modo destaque: card maior no bento grid */
   featured?: boolean;
 }
 
@@ -30,12 +27,12 @@ const ProductCard = ({ product, index = 0, featured = false }: Props) => {
     e.preventDefault();
     e.stopPropagation();
     addItem(product);
-    toast.success(`${product.name} adicionado!`, { duration: 2000 });
+    toast.success(`${product.name} adicionado ao carrinho!`, { duration: 2000 });
   };
 
   return (
     <motion.div
-      initial={{ opacity: 0, y: 24 }}
+      initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.45, delay: index * 0.06, ease: [0.22, 1, 0.36, 1] }}
       className="group flex flex-col"
@@ -53,13 +50,12 @@ const ProductCard = ({ product, index = 0, featured = false }: Props) => {
           <img
             src={product.images[0]}
             alt={product.name}
-            className={`w-full h-full object-cover transition-transform duration-700 ease-out group-hover:scale-[1.06] ${
+            className={`w-full h-full object-cover transition-transform duration-700 ease-out group-hover:scale-[1.05] ${
               imgLoaded ? "opacity-100" : "opacity-0"
             }`}
             loading="lazy"
             onLoad={() => setImgLoaded(true)}
           />
-          {/* Gradient overlay — legibilidade bottom */}
           <div className="absolute inset-0 bg-gradient-to-t from-black/30 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
         </Link>
 
@@ -79,14 +75,14 @@ const ProductCard = ({ product, index = 0, featured = false }: Props) => {
 
         {/* Esgotado */}
         {!product.inStock && (
-          <div className="absolute inset-0 bg-background/55 backdrop-blur-[3px] flex items-center justify-center">
+          <div className="absolute inset-0 bg-background/60 backdrop-blur-[2px] flex items-center justify-center">
             <span className="text-sm font-semibold text-foreground bg-background/85 px-4 py-1.5 rounded-full border border-border/40">
               Esgotado
             </span>
           </div>
         )}
 
-        {/* Quick actions — direita */}
+        {/* Quick actions */}
         <div className="absolute top-3 right-3 flex flex-col gap-2 opacity-0 group-hover:opacity-100 translate-x-2 group-hover:translate-x-0 transition-all duration-300">
           <button
             onClick={(e) => { e.preventDefault(); e.stopPropagation(); setLiked(!liked); }}
@@ -104,24 +100,23 @@ const ProductCard = ({ product, index = 0, featured = false }: Props) => {
           </Link>
         </div>
 
-        {/* CTA deslizante no bottom */}
+        {/* CTA deslizante */}
         {product.inStock && (
           <div className="absolute bottom-0 left-0 right-0 p-3 translate-y-full group-hover:translate-y-0 transition-transform duration-300 ease-out">
-            <Button
+            <button
               onClick={handleAdd}
-              className="w-full gap-2 text-xs h-9 rounded-xl gradient-brand border-0 shadow-card text-white hover:opacity-90"
-              size="sm"
+              className="w-full h-9 rounded-xl gradient-brand text-white flex items-center justify-center gap-2 text-xs font-bold shadow-card hover:opacity-90 transition-opacity"
             >
               <ShoppingBag className="h-3.5 w-3.5" />
-              Adicionar ao Carrinho
-            </Button>
+              Adicionar
+            </button>
           </div>
         )}
       </div>
 
       {/* Info */}
       <Link to={`/produto/${product.id}`} className="block flex-1 space-y-1">
-        <p className="text-[10px] text-muted-foreground uppercase tracking-[0.12em] font-semibold">
+        <p className="text-[10px] text-muted-foreground uppercase tracking-[0.15em] font-semibold">
           {product.category}
         </p>
         <h3 className={`font-medium text-foreground leading-snug line-clamp-2 group-hover:text-primary transition-colors duration-200 ${
@@ -130,24 +125,26 @@ const ProductCard = ({ product, index = 0, featured = false }: Props) => {
           {product.name}
         </h3>
 
-        <div className="space-y-0.5 pt-1">
-          {product.originalPrice && (
-            <span className="text-xs text-muted-foreground line-through block">
-              R$ {product.originalPrice.toFixed(2).replace(".", ",")}
+        <div className="space-y-0.5 pt-0.5">
+          <div className="flex items-baseline gap-2">
+            {product.originalPrice && (
+              <span className="text-xs text-muted-foreground line-through">
+                R$ {product.originalPrice.toFixed(2).replace(".", ",")}
+              </span>
+            )}
+            <span className={`font-bold text-foreground leading-tight ${featured ? "text-xl" : "text-lg"}`}>
+              R$ {product.price.toFixed(2).replace(".", ",")}
             </span>
-          )}
-          <span className={`font-bold text-foreground block leading-tight ${featured ? "text-xl" : "text-lg"}`}>
-            R$ {product.price.toFixed(2).replace(".", ",")}
-          </span>
-          <span className="text-[11px] font-semibold text-pix">
+          </div>
+          <p className="text-[11px] font-semibold text-pix">
             R$ {pixPrice.toFixed(2).replace(".", ",")} no PIX
-          </span>
-          <span className="text-[11px] text-muted-foreground block">
-            ou 3x de R$ {installment}
-          </span>
+          </p>
+          <p className="text-[11px] text-muted-foreground">
+            3x de R$ {installment}
+          </p>
         </div>
 
-        <div className="flex items-center gap-1 text-xs text-muted-foreground pt-1">
+        <div className="flex items-center gap-1 text-xs text-muted-foreground pt-0.5">
           <span className="text-gold">★</span>
           <span className="font-semibold text-foreground/80">{product.rating}</span>
           <span>({product.reviews})</span>
