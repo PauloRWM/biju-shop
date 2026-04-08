@@ -14,6 +14,10 @@
 </head>
 
   <body>
+    <!-- GitHub Pages SPA redirect -->
+    <script>
+      (function(){var r=sessionStorage.redirect;delete sessionStorage.redirect;if(r&&r!==location.href){history.replaceState(null,null,r);}})();
+    </script>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>

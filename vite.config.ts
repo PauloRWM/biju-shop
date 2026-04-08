@@ -4,6 +4,7 @@ import path from "path";
 
 // https://vitejs.dev/config/
 export default defineConfig({
+  base: '/biju-shop/',
   server: {
     host: "::",
     port: parseInt(process.env.PORT || '8080'),

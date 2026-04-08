@@ -19,7 +19,7 @@ const App = () => (
       <CartProvider>
         <Toaster />
         <Sonner />
-        <BrowserRouter>
+        <BrowserRouter basename="/biju-shop">
           <Routes>
             <Route path="/" element={<Index />} />
             <Route path="/produto/:id" element={<ProductDetail />} />
