@@ -1,8 +1,7 @@
 import { Link } from "react-router-dom";
-import { ShoppingBag, Heart, Eye } from "lucide-react";
+import { ShoppingBag, Heart } from "lucide-react";
 import { Product } from "@/data/products";
 import { useCart } from "@/contexts/CartContext";
-import { Button } from "@/components/ui/button";
 import { motion } from "framer-motion";
 import { useState } from "react";
 import { toast } from "sonner";
@@ -23,19 +22,17 @@ const ProductCard = ({ product }: { product: Product }) => {
     e.preventDefault();
     e.stopPropagation();
     addItem(product);
-    toast.success(`${product.name} adicionado ao carrinho!`, {
-      duration: 2000,
-    });
+    toast.success(`${product.name} adicionado ao carrinho!`, { duration: 2000 });
   };
 
   return (
     <motion.div
-      initial={{ opacity: 0, y: 20 }}
+      initial={{ opacity: 0, y: 15 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.4 }}
       className="group"
     >
-      <div className="relative overflow-hidden rounded-xl bg-secondary/30 aspect-[3/4] mb-3">
+      <div className="relative overflow-hidden bg-muted/40 aspect-[3/4] mb-4">
         <Link to={`/produto/${product.id}`}>
           {!imgLoaded && (
             <div className="absolute inset-0 bg-muted animate-pulse" />
@@ -43,7 +40,7 @@ const ProductCard = ({ product }: { product: Product }) => {
           <img
             src={product.images[0]}
             alt={product.name}
-            className={`w-full h-full object-cover group-hover:scale-105 transition-transform duration-700 ease-out ${
+            className={`w-full h-full object-cover group-hover:scale-[1.03] transition-transform duration-[800ms] ease-out ${
               imgLoaded ? "opacity-100" : "opacity-0"
             }`}
             loading="lazy"
@@ -52,36 +49,36 @@ const ProductCard = ({ product }: { product: Product }) => {
         </Link>
 
         {/* Badges */}
-        <div className="absolute top-2.5 left-2.5 flex flex-col gap-1.5">
-          {product.badge && (
-            <span className="bg-accent text-accent-foreground text-[10px] font-bold uppercase tracking-wider px-2.5 py-1 rounded-md shadow-sm">
-              {product.badge}
+        <div className="absolute top-3 left-3 flex flex-col gap-1.5">
+          {discount && (
+            <span className="bg-foreground text-background text-[10px] font-sans font-medium uppercase tracking-wider px-2.5 py-1">
+              -{discount}%
             </span>
           )}
-          {discount && (
-            <span className="bg-foreground text-background text-[10px] font-bold px-2.5 py-1 rounded-md shadow-sm">
-              -{discount}%
+          {product.badge && (
+            <span className="bg-accent text-accent-foreground text-[10px] font-sans font-medium uppercase tracking-wider px-2.5 py-1">
+              {product.badge}
             </span>
           )}
         </div>
 
         {!product.inStock && (
-          <div className="absolute inset-0 bg-background/60 backdrop-blur-[2px] flex items-center justify-center">
-            <span className="text-sm font-semibold text-foreground bg-background/80 px-4 py-1.5 rounded-full">
+          <div className="absolute inset-0 bg-background/70 backdrop-blur-[2px] flex items-center justify-center">
+            <span className="text-xs font-sans font-medium uppercase tracking-[0.15em] text-foreground">
               Esgotado
             </span>
           </div>
         )}
 
-        {/* Quick actions */}
-        <div className="absolute top-2.5 right-2.5 flex flex-col gap-2 opacity-0 group-hover:opacity-100 transition-all duration-300">
+        {/* Hover actions */}
+        <div className="absolute top-3 right-3 opacity-0 group-hover:opacity-100 transition-all duration-300">
           <button
             onClick={(e) => {
               e.preventDefault();
               e.stopPropagation();
               setLiked(!liked);
             }}
-            className="w-9 h-9 rounded-full bg-background/90 backdrop-blur-sm flex items-center justify-center hover:bg-background transition-colors shadow-md"
+            className="w-9 h-9 bg-background/90 backdrop-blur-sm flex items-center justify-center hover:bg-background transition-colors"
           >
             <Heart
               className={`h-4 w-4 transition-colors ${
@@ -89,59 +86,54 @@ const ProductCard = ({ product }: { product: Product }) => {
               }`}
             />
           </button>
-          <Link
-            to={`/produto/${product.id}`}
-            className="w-9 h-9 rounded-full bg-background/90 backdrop-blur-sm flex items-center justify-center hover:bg-background transition-colors shadow-md"
-          >
-            <Eye className="h-4 w-4 text-foreground" />
-          </Link>
         </div>
 
-        {/* Add to cart */}
+        {/* Add to cart bar */}
         {product.inStock && (
-          <div className="absolute bottom-0 left-0 right-0 p-3 opacity-0 group-hover:opacity-100 transition-all duration-300 translate-y-2 group-hover:translate-y-0">
-            <Button
+          <div className="absolute bottom-0 left-0 right-0 opacity-0 group-hover:opacity-100 transition-all duration-300 translate-y-full group-hover:translate-y-0">
+            <button
               onClick={handleAdd}
-              className="w-full gap-2 text-xs h-9 rounded-lg shadow-lg"
-              size="sm"
+              className="w-full h-10 bg-foreground text-background flex items-center justify-center gap-2 text-[11px] font-sans uppercase tracking-[0.12em] font-medium hover:bg-foreground/90 transition-colors"
             >
               <ShoppingBag className="h-3.5 w-3.5" />
-              Adicionar ao Carrinho
-            </Button>
+              Adicionar
+            </button>
           </div>
         )}
       </div>
 
-      <Link to={`/produto/${product.id}`} className="block space-y-1.5">
-        <p className="text-[11px] text-muted-foreground uppercase tracking-wider">
+      <Link to={`/produto/${product.id}`} className="block">
+        <p className="text-[10px] text-muted-foreground font-sans uppercase tracking-[0.15em] mb-1.5">
           {product.category}
         </p>
-        <h3 className="text-sm font-medium text-foreground leading-snug line-clamp-2 group-hover:text-primary transition-colors">
+        <h3 className="text-sm font-sans font-normal text-foreground leading-snug line-clamp-1 mb-2 group-hover:text-primary transition-colors">
           {product.name}
         </h3>
 
-        {/* Pricing */}
-        <div className="space-y-0.5 pt-1">
-          {product.originalPrice && (
-            <span className="text-xs text-muted-foreground line-through block">
-              R$ {product.originalPrice.toFixed(2).replace(".", ",")}
+        <div className="space-y-0.5">
+          <div className="flex items-baseline gap-2">
+            {product.originalPrice && (
+              <span className="text-xs text-muted-foreground line-through font-sans">
+                R$ {product.originalPrice.toFixed(2).replace(".", ",")}
+              </span>
+            )}
+            <span className="text-base font-sans font-bold text-foreground">
+              R$ {product.price.toFixed(2).replace(".", ",")}
             </span>
-          )}
-          <span className="text-lg font-bold text-foreground block leading-tight">
-            R$ {product.price.toFixed(2).replace(".", ",")}
-          </span>
-          <span className="text-[11px] font-semibold text-pix block">
+          </div>
+          <p className="text-[11px] font-sans font-semibold text-pix">
             R$ {pixPrice.toFixed(2).replace(".", ",")} no PIX
-          </span>
-          <span className="text-[11px] text-muted-foreground block">
-            ou 3x de R$ {installment}
-          </span>
+          </p>
+          <p className="text-[11px] font-sans text-muted-foreground">
+            3x de R$ {installment}
+          </p>
         </div>
 
-        <div className="flex items-center gap-1 text-xs text-muted-foreground pt-0.5">
-          <span className="text-gold">★</span>
-          <span className="font-medium">{product.rating}</span>
-          <span>({product.reviews})</span>
+        <div className="flex items-center gap-1 mt-2">
+          <span className="text-gold text-xs">★</span>
+          <span className="text-[11px] font-sans text-muted-foreground">
+            {product.rating} ({product.reviews})
+          </span>
         </div>
       </Link>
     </motion.div>
