@@ -135,7 +135,7 @@ const Checkout = () => {
               </div>
 
               {/* Progress steps */}
-              <div className="flex items-center gap-2 mb-8">
+              <div className="flex items-center justify-center gap-2 mb-8">
                 {["Dados", "Endereço", "Pagamento"].map((label, i) => (
                   <div key={label} className="flex items-center gap-2">
                     <div className="w-7 h-7 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-xs font-bold">

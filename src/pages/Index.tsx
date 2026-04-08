@@ -86,7 +86,12 @@ const Index = () => {
   }, [emblaApi, onSelect]);
 
   useEffect(() => {
-    if (catParam) setActiveCategory(catParam);
+    if (catParam) {
+      setActiveCategory(catParam);
+      setTimeout(() => {
+        document.getElementById("produtos")?.scrollIntoView({ behavior: "smooth", block: "start" });
+      }, 100);
+    }
   }, [catParam]);
 
   // API com fallback automático
@@ -289,7 +294,7 @@ const Index = () => {
       </section>
 
       {/* ─── All Products ─── */}
-      <section className="container mx-auto px-4 py-16 min-h-[400px]">
+      <section id="produtos" className="container mx-auto px-4 py-16 min-h-[400px]">
         <div className="flex flex-col md:flex-row md:items-end justify-between mb-10 gap-4">
           <div>
             <p className="text-[11px] font-sans uppercase tracking-[0.2em] text-muted-foreground mb-2">
