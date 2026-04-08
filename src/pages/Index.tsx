@@ -4,7 +4,7 @@ import Layout from "@/components/layout/Layout";
 import ProductCard from "@/components/ProductCard";
 import { products, categories } from "@/data/products";
 import { Button } from "@/components/ui/button";
-import { ArrowRight, Truck, Shield, RotateCcw, ChevronLeft, ChevronRight, Sparkles, Star, Instagram } from "lucide-react";
+import { ArrowRight, Truck, Shield, RotateCcw, ChevronLeft, ChevronRight, Sparkles, Star, Heart } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import useEmblaCarousel from "embla-carousel-react";
 import Autoplay from "embla-carousel-autoplay";
