@@ -96,9 +96,11 @@ const Header = () => {
                 onClick={() => { setSearchValue(""); setSearchOpen(false); }}
                 className="transition-opacity duration-300 hover:opacity-80"
               >
-                <h1 className="font-display text-2xl md:text-3xl font-light tracking-[0.15em] uppercase text-foreground">
-                  Luminária
-                </h1>
+                <img
+                  src="https://wesleybijoux.com.br/wp-content/uploads/2024/08/WhatsApp-Image-2026-01-18-at-17.07.54-e1774703118212.jpeg"
+                  alt="Wesley Bijoux"
+                  className="h-10 md:h-14 w-auto object-contain"
+                />
               </Link>
             </div>
 
