@@ -1,0 +1,25 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(gh pr create --title 'feat: integrar frontend com WooCommerce via plugin REST API' --body ':*)",
+      "Bash(where gh:*)",
+      "Bash(winget list:*)",
+      "Read(//c/Program Files/**)",
+      "Read(//c/Users/**)",
+      "WebSearch",
+      "Bash(tasklist /FI \"PID eq 42060\")",
+      "Bash(cmd /c \"tasklist /FI \\\\\"PID eq 42060\\\\\"\")",
+      "Bash(cmd /c \"tasklist /FI \\\\\"PID eq 42060\\\\\" /FO CSV\")",
+      "Bash(cmd /c \"wmic process where processid=42060 get name,processid,commandline 2>&1\")",
+      "Bash(npx tsc:*)",
+      "mcp__Claude_Preview__preview_start",
+      "Bash(npx vercel:*)",
+      "Bash(npx netlify:*)",
+      "Bash(php -l \"E:\\\\biju-shop\\\\wordpress-plugin\\\\biju-shop-connector\\\\includes\\\\class-auth.php\")",
+      "Bash(php -l \"E:\\\\biju-shop\\\\wordpress-plugin\\\\biju-shop-connector\\\\includes\\\\class-cors.php\")",
+      "Bash(php -l \"E:\\\\biju-shop\\\\wordpress-plugin\\\\biju-shop-connector\\\\includes\\\\class-orders.php\")",
+      "Bash(php -l \"E:\\\\biju-shop\\\\wordpress-plugin\\\\biju-shop-connector\\\\includes\\\\class-products.php\")",
+      "Bash(php -l \"E:\\\\biju-shop\\\\wordpress-plugin\\\\biju-shop-connector\\\\includes\\\\class-rest-api.php\")"
+    ]
+  }
+}

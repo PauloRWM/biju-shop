@@ -22,3 +22,7 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# WordPress backups (arquivos enormes, não versionar)
+wp-backups/
+*.wpress

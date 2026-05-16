@@ -1,0 +1,37 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(docker exec:*)",
+      "Bash(docker cp:*)",
+      "Bash(docker compose:*)",
+      "Bash(docker run:*)",
+      "Bash(docker network:*)",
+      "Bash(MSYS_NO_PATHCONV=1 docker run --rm --network biju-shop_wp-net --volumes-from wp_app --user 33:33 wordpress:cli wp --path=/var/www/html plugin list --allow-root)",
+      "mcp__Claude_Preview__preview_start",
+      "Bash(xargs grep *)",
+      "Read(//e/biju-shop/.claude/**)",
+      "Read(//mnt/e/biju-shop/.claude/**)",
+      "Bash(yarn lint *)",
+      "Bash(npx tsc *)",
+      "Bash(yarn build *)",
+      "Bash(php *)",
+      "Bash(git config *)",
+      "Bash(unzip -q mp-sdk.zip)",
+      "Bash(curl -sL -o mp-sdk.zip \"https://github.com/mercadopago/sdk-php/archive/refs/tags/2.5.0.zip\")",
+      "Bash(rm -rf sdk-php-3.5.0)",
+      "PowerShell(Set-Location \"d:\\\\Wesley Bijoux\\\\biju-shop\\\\wordpress-plugin\\\\biju-shop-connector\\\\vendor\"; try { Remove-Item -Recurse -Force \"sdk-php-3.5.0\" -ErrorAction Stop; Write-Output \"removed\" } catch { Start-Sleep -Seconds 3; try { Remove-Item -Recurse -Force \"sdk-php-3.5.0\" -ErrorAction Stop; Write-Output \"removed on retry\" } catch { Write-Output \"STILL BUSY: $\\($_.Exception.Message\\)\" } })",
+      "PowerShell(Start-Sleep -Seconds 5; Set-Location \"d:\\\\Wesley Bijoux\\\\biju-shop\\\\wordpress-plugin\\\\biju-shop-connector\"; try { Remove-Item -Recurse -Force \"vendor\" -ErrorAction Stop; Write-Output \"vendor removed\" } catch { Write-Output \"could not remove vendor: $\\($_.Exception.Message\\) - leaving for manual cleanup\" })",
+      "Bash(command -v ffmpeg)",
+      "Bash(command -v magick)",
+      "Bash(command -v cwebp)",
+      "Bash(cd /tmp)",
+      "Bash(curl -sL -o libwebp.zip \"https://storage.googleapis.com/downloads.webmproject.org/releases/webp/libwebp-1.3.2-windows-x64.zip\")",
+      "Bash(unzip -q -o libwebp.zip)",
+      "Bash(node -e \"require\\('sharp'\\)\")",
+      "Bash(node -e ' *)",
+      "Bash(npm i *)",
+      "Bash(yarn add *)",
+      "Bash(taskkill /F /IM node.exe)"
+    ]
+  }
+}

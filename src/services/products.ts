@@ -26,8 +26,11 @@ export interface Category {
 }
 
 export async function fetchProducts(params: ProductsParams = {}): Promise<ProductsPage> {
-  const res = await fetch(buildProductsUrl(params));
-  if (!res.ok) throw new Error('Erro ao buscar produtos');
+  const url = buildProductsUrl(params);
+  const res = await fetch(url);
+  if (!res.ok) {
+    throw new Error(`Erro ao buscar produtos (HTTP ${res.status})`);
+  }
 
   const total = Number(res.headers.get('X-WP-Total') ?? 0);
   const totalPages = Number(res.headers.get('X-WP-TotalPages') ?? 1);

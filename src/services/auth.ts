@@ -29,6 +29,27 @@ export async function register(
   return res;
 }
 
+export async function forgotPassword(
+  email: string,
+): Promise<{ success: boolean; message: string }> {
+  return api.post<{ success: boolean; message: string }>('/auth/forgot-password', { email });
+}
+
+export async function loginWithGoogle(credential: string): Promise<AuthResponse> {
+  const res = await api.post<AuthResponse>('/auth/google', { credential });
+  setAuthToken(res.token);
+  return res;
+}
+
+export interface GoogleConfig {
+  enabled: boolean;
+  client_id: string;
+}
+
+export async function fetchGoogleConfig(): Promise<GoogleConfig> {
+  return api.get<GoogleConfig>('/auth/google/config');
+}
+
 export function logout() {
   setAuthToken(null);
 }

@@ -16,20 +16,63 @@ import {
 import { motion } from "framer-motion";
 import { useState } from "react";
 import ProductCard from "@/components/ProductCard";
-import { products } from "@/data/products";
+import { useProducts } from "@/hooks/useProducts";
+import { validateCoupon } from "@/services/coupons";
+import { toast } from "sonner";
 
 const Cart = () => {
-  const { items, updateQuantity, removeItem, totalPrice } = useCart();
-  const [coupon, setCoupon] = useState("");
-  const [couponApplied, setCouponApplied] = useState(false);
+  const { items, updateQuantity, removeItem, totalPrice, coupon, setCoupon } = useCart();
+  const [couponInput, setCouponInput] = useState("");
+  const [validating, setValidating] = useState(false);
   const shipping = totalPrice >= 99 ? 0 : 14.9;
-  const couponDiscount = couponApplied ? totalPrice * 0.05 : 0;
-  const total = totalPrice - couponDiscount + shipping;
+  const couponDiscount = coupon?.discount ?? 0;
+  const freeShippingByCoupon = coupon?.free_shipping ?? false;
+  const effectiveShipping = freeShippingByCoupon ? 0 : shipping;
+  const total = Math.max(0, totalPrice - couponDiscount) + effectiveShipping;
   const pixTotal = total * 0.9;
 
-  // Suggested products (not in cart)
+  const applyCoupon = async () => {
+    const code = couponInput.trim();
+    if (!code) return;
+    setValidating(true);
+    try {
+      const result = await validateCoupon({
+        code,
+        subtotal: totalPrice,
+        items: items.map((i) => ({
+          product_id: Number(i.product.id),
+          qty: i.quantity,
+          price: i.unitPrice ?? i.product.price,
+        })),
+      });
+      setCoupon({
+        code: result.code,
+        discount: result.discount,
+        discount_type: result.discount_type,
+        amount: result.amount,
+        free_shipping: result.free_shipping,
+      });
+      toast.success(`Cupom ${result.code.toUpperCase()} aplicado!`);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Cupom inválido.";
+      toast.error(message);
+    } finally {
+      setValidating(false);
+    }
+  };
+
+  const removeCoupon = () => {
+    setCoupon(null);
+    setCouponInput("");
+  };
+
+  // Suggested products — busca destaques reais do WooCommerce, filtra os que
+  // já estão no carrinho. Se não houver featured marcados, cai pros mais recentes.
+  const { data: featuredPage } = useProducts({ featured: true, per_page: 8 });
+  const { data: latestPage } = useProducts({ per_page: 8 });
   const cartIds = items.map((i) => i.product.id);
-  const suggestions = products
+  const pool = (featuredPage?.products?.length ? featuredPage.products : latestPage?.products) ?? [];
+  const suggestions = pool
     .filter((p) => !cartIds.includes(p.id) && p.inStock)
     .slice(0, 4);
 
@@ -95,9 +138,9 @@ const Cart = () => {
               <span className="col-span-1" />
             </div>
 
-            {items.map(({ product, quantity }) => (
+            {items.map(({ product, quantity, variationId, variationLabel, unitPrice }) => (
               <motion.div
-                key={product.id}
+                key={`${product.id}-${variationId ?? 0}`}
                 layout
                 initial={{ opacity: 0, y: 10 }}
                 animate={{ opacity: 1, y: 0 }}
@@ -108,9 +151,11 @@ const Cart = () => {
                 <div className="md:col-span-6 flex gap-4 items-center min-w-0">
                   <Link to={`/produto/${product.id}`} className="shrink-0">
                     <img
-                      src={product.images[0]}
+                      src={product.images_thumb?.[0] ?? product.images[0]}
                       alt={product.name}
                       className="w-20 h-20 md:w-24 md:h-24 rounded-lg object-cover"
+                      loading="lazy"
+                      decoding="async"
                     />
                   </Link>
                   <div className="min-w-0">
@@ -120,10 +165,10 @@ const Cart = () => {
                       </h3>
                     </Link>
                     <p className="text-xs text-muted-foreground mt-1">
-                      {product.material}
+                      {variationLabel || product.material}
                     </p>
                     <p className="text-sm font-bold text-foreground mt-1 md:hidden">
-                      R$ {product.price.toFixed(2).replace(".", ",")}
+                      R$ {(unitPrice ?? product.price).toFixed(2).replace(".", ",")}
                     </p>
                   </div>
                 </div>
@@ -133,7 +178,7 @@ const Cart = () => {
                   <div className="flex items-center border rounded-lg overflow-hidden">
                     <button
                       onClick={() =>
-                        updateQuantity(product.id, quantity - 1)
+                        updateQuantity(product.id, quantity - 1, variationId)
                       }
                       className="p-2 hover:bg-muted transition-colors"
                     >
@@ -144,7 +189,7 @@ const Cart = () => {
                     </span>
                     <button
                       onClick={() =>
-                        updateQuantity(product.id, quantity + 1)
+                        updateQuantity(product.id, quantity + 1, variationId)
                       }
                       className="p-2 hover:bg-muted transition-colors"
                     >
@@ -157,13 +202,13 @@ const Cart = () => {
                 <div className="md:col-span-3 hidden md:block text-right">
                   <span className="text-sm font-bold text-foreground">
                     R${" "}
-                    {(product.price * quantity)
+                    {((unitPrice ?? product.price) * quantity)
                       .toFixed(2)
                       .replace(".", ",")}
                   </span>
                   <span className="text-xs text-pix block">
                     R${" "}
-                    {(product.price * quantity * 0.9)
+                    {((unitPrice ?? product.price) * quantity * 0.9)
                       .toFixed(2)
                       .replace(".", ",")}{" "}
                     no PIX
@@ -173,7 +218,7 @@ const Cart = () => {
                 {/* Remove */}
                 <div className="md:col-span-1 flex md:justify-end">
                   <button
-                    onClick={() => removeItem(product.id)}
+                    onClick={() => removeItem(product.id, variationId)}
                     className="text-muted-foreground hover:text-destructive transition-colors p-1"
                   >
                     <Trash2 className="h-4 w-4" />
@@ -198,22 +243,31 @@ const Cart = () => {
                 <div className="flex gap-2">
                   <Input
                     placeholder="Código"
-                    value={coupon}
-                    onChange={(e) => setCoupon(e.target.value)}
+                    value={coupon ? coupon.code.toUpperCase() : couponInput}
+                    onChange={(e) => setCouponInput(e.target.value)}
                     className="h-9 text-sm"
-                    disabled={couponApplied}
+                    disabled={!!coupon || validating}
                   />
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="h-9 shrink-0"
-                    onClick={() => {
-                      if (coupon.trim()) setCouponApplied(true);
-                    }}
-                    disabled={couponApplied || !coupon.trim()}
-                  >
-                    {couponApplied ? "Aplicado ✓" : "Aplicar"}
-                  </Button>
+                  {coupon ? (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-9 shrink-0"
+                      onClick={removeCoupon}
+                    >
+                      Remover
+                    </Button>
+                  ) : (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-9 shrink-0"
+                      onClick={applyCoupon}
+                      disabled={validating || !couponInput.trim()}
+                    >
+                      {validating ? "..." : "Aplicar"}
+                    </Button>
+                  )}
                 </div>
               </div>
 
@@ -224,9 +278,12 @@ const Cart = () => {
                     R$ {totalPrice.toFixed(2).replace(".", ",")}
                   </span>
                 </div>
-                {couponApplied && (
+                {coupon && couponDiscount > 0 && (
                   <div className="flex justify-between text-pix">
-                    <span>Cupom (5%)</span>
+                    <span>
+                      Cupom {coupon.code.toUpperCase()}
+                      {coupon.discount_type === "percent" && ` (${coupon.amount}%)`}
+                    </span>
                     <span>
                       -R$ {couponDiscount.toFixed(2).replace(".", ",")}
                     </span>
@@ -236,22 +293,24 @@ const Cart = () => {
                   <span className="text-muted-foreground">Frete</span>
                   <span
                     className={
-                      shipping === 0
+                      effectiveShipping === 0
                         ? "text-pix font-medium"
                         : "text-foreground"
                     }
                   >
-                    {shipping === 0
-                      ? "Grátis ✓"
-                      : `R$ ${shipping.toFixed(2).replace(".", ",")}`}
+                    {effectiveShipping === 0
+                      ? freeShippingByCoupon
+                        ? "Grátis (cupom) ✓"
+                        : "Grátis ✓"
+                      : `R$ ${effectiveShipping.toFixed(2).replace(".", ",")}`}
                   </span>
                 </div>
-                {shipping > 0 && (
+                {effectiveShipping > 0 && (
                   <div className="bg-primary/5 rounded-lg p-2.5 flex items-center gap-2">
                     <Truck className="h-4 w-4 text-primary shrink-0" />
                     <p className="text-xs text-primary">
                       Faltam R${" "}
-                      {(99 - totalPrice).toFixed(2).replace(".", ",")} para
+                      {(1000 - totalPrice).toFixed(2).replace(".", ",")} para
                       frete grátis!
                     </p>
                   </div>

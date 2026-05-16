@@ -1,3 +1,22 @@
+export interface ProductAttribute {
+  name: string;
+  label: string;
+  options: string[];
+  slug_to_label?: Record<string, string>;
+  taxonomy?: boolean;
+  variation?: boolean;
+}
+
+export interface ProductVariation {
+  id: number;
+  attributes: Record<string, string>;
+  price: number;
+  regularPrice?: number;
+  inStock: boolean;
+  image?: string;
+  sku?: string;
+}
+
 export interface Product {
   id: string;
   name: string;
@@ -6,12 +25,17 @@ export interface Product {
   description: string;
   category: string;
   images: string[];
+  images_thumb?: string[];
+  has_image?: boolean;
   badge?: string;
   rating: number;
   reviews: number;
   material: string;
   colors: string[];
   inStock: boolean;
+  type?: string;
+  attributes?: ProductAttribute[];
+  variations?: ProductVariation[];
 }
 
 export const categories = [

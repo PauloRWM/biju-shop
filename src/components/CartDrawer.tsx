@@ -30,20 +30,20 @@ const CartDrawer = () => {
         </Button>
       </SheetTrigger>
 
-      <SheetContent className="flex flex-col w-full sm:max-w-md !p-0 h-full overflow-hidden">
-        <SheetHeader className="px-4 pt-4 pb-3 border-b">
-          <SheetTitle className="font-display text-lg">
+      <SheetContent className="flex flex-col w-full sm:max-w-md p-0 h-full">
+        <SheetHeader className="px-6 pt-6 pb-4 border-b shrink-0">
+          <SheetTitle className="font-display text-xl">
             Carrinho ({totalItems})
           </SheetTitle>
         </SheetHeader>
 
         {items.length === 0 ? (
-          <div className="flex-1 flex flex-col items-center justify-center gap-3 px-4">
-            <ShoppingBag className="h-12 w-12 text-muted-foreground/40" />
-            <p className="text-sm text-muted-foreground">Seu carrinho está vazio</p>
+          <div className="flex-1 flex flex-col items-center justify-center gap-4 px-6">
+            <ShoppingBag className="h-16 w-16 text-muted-foreground/30" />
+            <p className="text-sm text-muted-foreground text-center">Seu carrinho está vazio</p>
             <SheetClose asChild>
               <Link to="/">
-                <Button variant="outline" size="sm">
+                <Button variant="outline">
                   Continuar comprando
                 </Button>
               </Link>
@@ -51,95 +51,107 @@ const CartDrawer = () => {
           </div>
         ) : (
           <>
-            <div className="flex-1 overflow-y-auto px-4 py-3 space-y-3">
-              {items.map((item) => (
-                <div
-                  key={item.product.id}
-                  className="flex gap-3 rounded-lg border p-2.5"
-                >
-                  <Link to={`/produto/${item.product.id}`} className="shrink-0">
-                    <SheetClose asChild>
+            <div className="flex-1 overflow-y-auto px-6 py-4">
+              <div className="space-y-4">
+                {items.map((item) => (
+                  <div
+                    key={item.product.id}
+                    className="flex gap-4 pb-4 border-b last:border-0"
+                  >
+                    <Link to={`/produto/${item.product.id}`} className="shrink-0" onClick={closeCart}>
                       <img
-                        src={item.product.images[0]}
+                        src={item.product.images_thumb?.[0] ?? item.product.images[0]}
                         alt={item.product.name}
-                        className="w-16 h-16 sm:w-20 sm:h-20 object-cover rounded-md"
+                        className="w-20 h-20 object-cover rounded-lg"
+                        loading="lazy"
+                        decoding="async"
                       />
-                    </SheetClose>
-                  </Link>
+                    </Link>
 
-                  <div className="flex-1 min-w-0 flex flex-col justify-between">
-                    <div>
-                      <h4 className="text-sm font-medium text-foreground line-clamp-2 leading-snug">
-                        {item.product.name}
-                      </h4>
-                      <p className="text-sm font-bold text-foreground mt-0.5">
-                        R$ {(item.product.price * item.quantity).toFixed(2).replace(".", ",")}
-                      </p>
-                    </div>
+                    <div className="flex-1 min-w-0 flex flex-col gap-2">
+                      <div>
+                        <h4 className="text-sm font-medium text-foreground line-clamp-2 leading-tight mb-1">
+                          {item.product.name}
+                        </h4>
+                        <p className="text-base font-bold text-foreground">
+                          R$ {(item.product.price * item.quantity).toFixed(2).replace(".", ",")}
+                        </p>
+                      </div>
 
-                    <div className="flex items-center justify-between mt-1.5">
-                      <div className="flex items-center border rounded-md">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center border rounded-lg overflow-hidden">
+                          <button
+                            onClick={() => updateQuantity(item.product.id, item.quantity - 1)}
+                            className="p-2 hover:bg-muted transition-colors"
+                            aria-label="Diminuir quantidade"
+                          >
+                            <Minus className="h-4 w-4" />
+                          </button>
+                          <span className="px-4 text-sm font-medium min-w-[2.5rem] text-center">{item.quantity}</span>
+                          <button
+                            onClick={() => updateQuantity(item.product.id, item.quantity + 1)}
+                            className="p-2 hover:bg-muted transition-colors"
+                            aria-label="Aumentar quantidade"
+                          >
+                            <Plus className="h-4 w-4" />
+                          </button>
+                        </div>
                         <button
-                          onClick={() => updateQuantity(item.product.id, item.quantity - 1)}
-                          className="p-1 hover:bg-muted transition-colors"
+                          onClick={() => removeItem(item.product.id)}
+                          className="p-2 text-muted-foreground hover:text-destructive transition-colors"
+                          aria-label="Remover item"
                         >
-                          <Minus className="h-3.5 w-3.5" />
-                        </button>
-                        <span className="px-2.5 text-xs font-medium">{item.quantity}</span>
-                        <button
-                          onClick={() => updateQuantity(item.product.id, item.quantity + 1)}
-                          className="p-1 hover:bg-muted transition-colors"
-                        >
-                          <Plus className="h-3.5 w-3.5" />
+                          <Trash2 className="h-4 w-4" />
                         </button>
                       </div>
-                      <button
-                        onClick={() => removeItem(item.product.id)}
-                        className="p-1 text-muted-foreground hover:text-destructive transition-colors"
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </button>
                     </div>
                   </div>
-                </div>
-              ))}
+                ))}
+              </div>
             </div>
 
-            <div className="border-t px-4 py-4 space-y-3">
-              <div className="flex justify-between text-sm">
-                <span className="text-muted-foreground">Subtotal</span>
-                <span className="font-bold text-foreground">
-                  R$ {totalPrice.toFixed(2).replace(".", ",")}
-                </span>
-              </div>
-              <div className="flex justify-between text-sm">
-                <span className="text-pix font-semibold">No PIX</span>
-                <span className="text-pix font-bold">
-                  R$ {pixTotal.toFixed(2).replace(".", ",")}
-                </span>
+            <div className="border-t px-6 py-5 space-y-4 shrink-0 bg-background">
+              <div className="space-y-2">
+                <div className="flex justify-between items-center">
+                  <span className="text-sm text-muted-foreground">Subtotal</span>
+                  <span className="text-base font-bold text-foreground">
+                    R$ {totalPrice.toFixed(2).replace(".", ",")}
+                  </span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <div className="flex items-center gap-2">
+                    <img src="/icons8-pix.svg" alt="PIX" className="w-4 h-4" />
+                    <span className="text-sm font-semibold text-[#32BCAD]">No PIX (10% OFF)</span>
+                  </div>
+                  <span className="text-lg font-bold text-[#32BCAD]">
+                    R$ {pixTotal.toFixed(2).replace(".", ",")}
+                  </span>
+                </div>
               </div>
 
               <SheetClose asChild>
                 <Link to="/checkout" className="block">
-                  <Button className="w-full gap-2" size="lg">
+                  <Button className="w-full gap-2 h-11" size="lg">
                     Finalizar Compra <ArrowRight className="h-4 w-4" />
                   </Button>
                 </Link>
               </SheetClose>
 
-              <SheetClose asChild>
-                <Link to="/carrinho" className="block">
-                  <button className="w-full h-9 rounded-xl gradient-brand text-white flex items-center justify-center text-xs font-bold hover:opacity-90 transition-opacity">
-                    Ver carrinho completo
-                  </button>
-                </Link>
-              </SheetClose>
+              <div className="flex gap-2">
+                <SheetClose asChild>
+                  <Link to="/carrinho" className="flex-1">
+                    <Button variant="outline" className="w-full h-10">
+                      Ver carrinho
+                    </Button>
+                  </Link>
+                </SheetClose>
 
-              <SheetClose asChild>
-                <button className="w-full h-9 rounded-xl gradient-brand text-white flex items-center justify-center text-xs font-bold hover:opacity-90 transition-opacity">
-                  Continuar comprando
-                </button>
-              </SheetClose>
+                <SheetClose asChild>
+                  <Button variant="ghost" className="flex-1 h-10">
+                    Continuar comprando
+                  </Button>
+                </SheetClose>
+              </div>
             </div>
           </>
         )}

@@ -16,6 +16,7 @@ export interface OrderBilling {
 export interface OrderItem {
   product_id: number;
   quantity: number;
+  variation_id?: number;
 }
 
 export interface CreateOrderPayload {
@@ -23,6 +24,42 @@ export interface CreateOrderPayload {
   items: OrderItem[];
   payment_method: 'pix' | 'billet' | 'credit_card';
   customer_note?: string;
+  shipping_method_id?: string;
+  shipping_method_title?: string;
+  shipping_total?: number;
+  discount_total?: number;
+  discount_title?: string;
+  coupon_code?: string;
+  cpf?: string;
+  fbp?: string;
+  fbc?: string;
+  card?: {
+    token: string;
+    payment_method_id: string;
+    installments: number;
+    issuer_id?: string;
+    holder_name?: string;
+    bin?: string;
+    last_four_digits?: string;
+    expiration_month?: string;
+    expiration_year?: string;
+    installments_amount?: number;
+    total_paid_amount?: number;
+  };
+}
+
+export interface PaymentDetails {
+  qr_code_base64?: string;
+  qr_code?: string;
+  ticket_url?: string;
+  expires_at?: string;
+  boleto_url?: string;
+  boleto_barcode?: string;
+  payment_id?: string;
+  status?: string;
+  status_detail?: string;
+  error?: string;
+  message?: string;
 }
 
 export interface Order {
@@ -52,6 +89,7 @@ export interface Order {
   };
   createdAt: string;
   customerNote: string;
+  payment?: PaymentDetails;
 }
 
 export async function createOrder(payload: CreateOrderPayload): Promise<Order> {

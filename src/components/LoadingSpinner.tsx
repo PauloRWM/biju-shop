@@ -2,14 +2,14 @@ import { motion } from "framer-motion";
 
 const LoadingSpinner = () => {
   return (
-    <div className="flex flex-col items-center justify-center py-32 gap-4">
-      <motion.div
-        className="w-10 h-10 border-3 border-muted border-t-primary rounded-full"
-        animate={{ rotate: 360 }}
-        transition={{ duration: 0.8, repeat: Infinity, ease: "linear" }}
-        style={{ borderWidth: 3 }}
+    <div className="flex flex-col items-center justify-center py-24 gap-3">
+      <motion.img
+        src="/logo.png"
+        alt="Wesley Bijoux"
+        className="w-20 h-20 object-contain"
+        animate={{ opacity: [0.4, 1, 0.4], scale: [0.95, 1, 0.95] }}
+        transition={{ duration: 1.4, repeat: Infinity, ease: "easeInOut" }}
       />
-      <span className="text-sm text-muted-foreground">Carregando...</span>
     </div>
   );
 };

@@ -44,9 +44,18 @@ class Biju_CORS {
 
     private static function get_allowed_origins(): array {
         $frontend_url = get_option( 'biju_frontend_url', 'http://localhost:8080' );
-        $origins = [ $frontend_url ];
 
-        // Suporte a múltiplas origens via filtro
+        $origins = [
+            $frontend_url,
+            'http://localhost:5173',
+            'http://localhost:8080',
+            'https://wesleybijoux.com.br',
+            'https://www.wesleybijoux.com.br',
+            'https://novo.wesleybijoux.com.br',
+        ];
+
+        $origins = array_values( array_unique( array_filter( $origins ) ) );
+
         return apply_filters( 'biju_allowed_origins', $origins );
     }
 }

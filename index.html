@@ -11,6 +11,20 @@
   <meta name="twitter:title" content="Wesley Bijoux">
   <meta property="og:description" content="Acessorios e bijuterias de qualidade">
   <meta name="twitter:description" content="Acessorios e bijuterias de qualidade">
+  <style>
+    #initial-loader {
+      position: fixed; inset: 0; display: flex; align-items: center; justify-content: center;
+      background: #faf7f2; z-index: 9999;
+    }
+    #initial-loader img {
+      width: 96px; height: 96px; object-fit: contain;
+      animation: biju-pulse 1.4s ease-in-out infinite;
+    }
+    @keyframes biju-pulse {
+      0%, 100% { opacity: 0.4; transform: scale(0.95); }
+      50%      { opacity: 1;   transform: scale(1); }
+    }
+  </style>
 </head>
 
   <body>
@@ -18,7 +32,11 @@
     <script>
       (function(){var r=sessionStorage.redirect;delete sessionStorage.redirect;if(r&&r!==location.href){history.replaceState(null,null,r);}})();
     </script>
-    <div id="root"></div>
+    <div id="root">
+      <div id="initial-loader">
+        <img src="/logo.png" alt="Wesley Bijoux" />
+      </div>
+    </div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

@@ -1,10 +1,12 @@
 import { Link } from "react-router-dom";
-import { ShoppingBag, Heart, Eye } from "lucide-react";
+import { ShoppingBag, Heart, Minus, Plus } from "lucide-react";
 import { Product } from "@/data/products";
 import { useCart } from "@/contexts/CartContext";
-import { motion } from "framer-motion";
 import { useState } from "react";
 import { toast } from "sonner";
+import { trackAddToCart } from "@/services/metaPixel";
+import { useQueryClient } from "@tanstack/react-query";
+import { fetchProduct } from "@/services/products";
 
 interface Props {
   product: Product;
@@ -12,146 +14,226 @@ interface Props {
   featured?: boolean;
 }
 
-const ProductCard = ({ product, index = 0, featured = false }: Props) => {
-  const { addItem, openCart } = useCart();
+const ProductCard = ({ product, index = 0 }: Props) => {
+  const { addItem, openCart, items, updateQuantity } = useCart();
+  const queryClient = useQueryClient();
   const [liked, setLiked] = useState(false);
   const [imgLoaded, setImgLoaded] = useState(false);
+  const [hovered, setHovered] = useState(false);
+  const [qty, setQty] = useState(0);
+  const [prefetched, setPrefetched] = useState(false);
 
-  const discount = product.originalPrice
-    ? Math.round((1 - product.price / product.originalPrice) * 100)
-    : null;
+  // Produtos variáveis não podem ser controlados direto no card —
+  // precisam ir pra página de detalhe pra escolher a variação.
+  const isVariable =
+    product.type === "variable" ||
+    (product.variations && product.variations.length > 0);
+
+  // Quantidade atual deste produto no carrinho (só p/ produtos simples).
+  const cartQty = isVariable
+    ? 0
+    : items
+        .filter((i) => i.product.id === product.id && !i.variationId)
+        .reduce((s, i) => s + i.quantity, 0);
+
+  // Para produtos simples sincroniza o display com o carrinho;
+  // para variáveis usa o estado local (que serve só pro botão "Adicionar"
+  // que leva à página de detalhe).
+  const displayQty = isVariable ? qty : cartQty;
+
+  const prefetchProduct = () => {
+    if (prefetched) return;
+    setPrefetched(true);
+    queryClient.prefetchQuery({
+      queryKey: ["product", product.id],
+      queryFn: () => fetchProduct(product.id),
+      staleTime: 60_000,
+    });
+  };
+
   const pixPrice = product.price * 0.9;
   const installment = (product.price / 3).toFixed(2).replace(".", ",");
+  const hasSecondImage = product.images && product.images.length > 1;
 
-  const handleAdd = (e: React.MouseEvent) => {
+  const stopLink = (e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
-    addItem(product);
+  };
+
+  const decQty = (e: React.MouseEvent) => {
+    stopLink(e);
+    if (isVariable) {
+      setQty((q) => Math.max(0, q - 1));
+      return;
+    }
+    // Decrementa direto no carrinho — toda mudança aqui já reflete no checkout.
+    updateQuantity(product.id, Math.max(0, cartQty - 1));
+  };
+
+  const incQty = (e: React.MouseEvent) => {
+    stopLink(e);
+    if (isVariable) {
+      setQty((q) => Math.min(99, q + 1));
+      return;
+    }
+    const newQty = Math.min(99, cartQty + 1);
+    if (cartQty === 0) {
+      addItem(product, 1);
+      trackAddToCart({
+        productId: product.id,
+        name: product.name,
+        price: product.price,
+        quantity: 1,
+      });
+    } else {
+      updateQuantity(product.id, newQty);
+    }
+  };
+
+  const handleAdd = (e: React.MouseEvent) => {
+    stopLink(e);
+    // Produto com variações: redireciona para a página de detalhe
+    if (isVariable) {
+      if (qty <= 0) {
+        window.location.href = `/produto/${product.id}`;
+        return;
+      }
+      window.location.href = `/produto/${product.id}`;
+      return;
+    }
+    // Para produto simples, abre o carrinho. O +/- já adicionou.
+    if (cartQty <= 0) {
+      addItem(product, 1);
+      trackAddToCart({
+        productId: product.id,
+        name: product.name,
+        price: product.price,
+        quantity: 1,
+      });
+    }
     openCart();
-    toast.success(`${product.name} adicionado ao carrinho!`, { duration: 2000 });
+    toast.success(`${product.name} no carrinho!`, { duration: 2000 });
   };
 
   return (
-    <motion.div
-      initial={{ opacity: 0, y: 20 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.45, delay: index * 0.06, ease: [0.22, 1, 0.36, 1] }}
-      className="group flex flex-col"
+    <div
+      className="group flex flex-col h-full"
+      onMouseEnter={() => { setHovered(true); prefetchProduct(); }}
+      onMouseLeave={() => setHovered(false)}
+      onTouchStart={prefetchProduct}
     >
-      {/* Image container */}
-      <div
-        className={`relative overflow-hidden rounded-2xl bg-secondary/40 mb-3 ${
-          featured ? "aspect-[3/4] md:aspect-square" : "aspect-[3/4]"
-        }`}
-      >
+      {/* Imagem — 4:5, troca de imagem no hover */}
+      <div className="relative overflow-hidden rounded-xl bg-muted/30 mb-2.5 aspect-[4/5]">
         <Link to={`/produto/${product.id}`} className="block w-full h-full">
           {!imgLoaded && (
             <div className="absolute inset-0 bg-gradient-to-br from-muted to-secondary animate-pulse" />
           )}
+          {/* Imagem principal — exibida imediatamente assim que o navegador
+              renderiza o pixel. Sem fade nem espera de imgLoaded. */}
           <img
-            src={product.images[0]}
+            src={product.images_thumb?.[0] ?? product.images[0]}
             alt={product.name}
-            className={`w-full h-full object-cover transition-transform duration-700 ease-out group-hover:scale-[1.05] ${
-              imgLoaded ? "opacity-100" : "opacity-0"
-            }`}
+            className={`absolute inset-0 w-full h-full object-cover ${
+              hovered && hasSecondImage ? "opacity-0" : "opacity-100"
+            } transition-opacity duration-200`}
             loading="lazy"
+            decoding="async"
             onLoad={() => setImgLoaded(true)}
           />
-          <div className="absolute inset-0 bg-gradient-to-t from-black/30 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
+          {/* Segunda imagem no hover */}
+          {hasSecondImage && (
+            <img
+              src={product.images_thumb?.[1] ?? product.images[1]}
+              alt={product.name}
+              className={`absolute inset-0 w-full h-full object-cover transition-opacity duration-200 ${
+                hovered ? "opacity-100" : "opacity-0"
+              }`}
+              loading="lazy"
+              decoding="async"
+            />
+          )}
         </Link>
-
-        {/* Badges */}
-        <div className="absolute top-3 left-3 flex flex-col gap-1.5">
-          {product.badge && (
-            <span className="gradient-brand text-white text-[10px] font-bold uppercase tracking-wider px-2.5 py-1 rounded-full shadow-md">
-              {product.badge}
-            </span>
-          )}
-          {discount && (
-            <span className="bg-foreground/90 text-background text-[10px] font-bold px-2.5 py-1 rounded-full shadow-md backdrop-blur-sm">
-              -{discount}%
-            </span>
-          )}
-        </div>
 
         {/* Esgotado */}
         {!product.inStock && (
-          <div className="absolute inset-0 bg-background/60 backdrop-blur-[2px] flex items-center justify-center">
-            <span className="text-sm font-semibold text-foreground bg-background/85 px-4 py-1.5 rounded-full border border-border/40">
+          <div className="absolute inset-0 bg-background/60 backdrop-blur-[2px] flex items-center justify-center z-30">
+            <span className="text-xs font-semibold text-foreground bg-background/85 px-3 py-1 rounded-full border border-border/40">
               Esgotado
             </span>
           </div>
         )}
 
-        {/* Quick actions */}
-        <div className="absolute top-3 right-3 flex flex-col gap-2 opacity-0 group-hover:opacity-100 translate-x-2 group-hover:translate-x-0 transition-all duration-300">
-          <button
-            onClick={(e) => { e.preventDefault(); e.stopPropagation(); setLiked(!liked); }}
-            aria-label={liked ? "Remover dos favoritos" : "Adicionar aos favoritos"}
-            className="w-9 h-9 rounded-full bg-background/90 backdrop-blur-md flex items-center justify-center shadow-soft hover:scale-110 transition-all duration-200"
-          >
-            <Heart className={`h-4 w-4 transition-colors ${liked ? "fill-accent text-accent" : "text-foreground"}`} />
-          </button>
-          <Link
-            to={`/produto/${product.id}`}
-            aria-label="Ver produto"
-            className="w-9 h-9 rounded-full bg-background/90 backdrop-blur-md flex items-center justify-center shadow-soft hover:scale-110 transition-all duration-200"
-          >
-            <Eye className="h-4 w-4 text-foreground" />
-          </Link>
-        </div>
+        {/* Favorito */}
+        <button
+          onClick={(e) => { e.preventDefault(); e.stopPropagation(); setLiked(!liked); }}
+          aria-label="Favoritar"
+          className="absolute top-2.5 right-2.5 w-8 h-8 rounded-full bg-background/80 backdrop-blur-sm flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all duration-200 z-20 hover:scale-110"
+        >
+          <Heart className={`h-3.5 w-3.5 ${liked ? "fill-red-500 text-red-500" : "text-foreground/70"}`} />
+        </button>
 
-        {/* CTA deslizante */}
+        {/* Seletor de quantidade + adicionar ao carrinho.
+            Sempre visível em todos os tamanhos de tela. */}
         {product.inStock && (
-          <div className="absolute bottom-0 left-0 right-0 p-3 translate-y-full group-hover:translate-y-0 transition-transform duration-300 ease-out">
+          <div className="absolute bottom-0 left-0 right-0 p-1.5 md:p-2.5 z-20 flex gap-1 md:gap-1.5">
+            <div className="flex items-center h-9 md:h-10 rounded-lg bg-background/95 backdrop-blur-sm border border-border/60 shadow-lg overflow-hidden shrink-0">
+              <button
+                type="button"
+                onClick={decQty}
+                aria-label="Diminuir quantidade"
+                className="h-full w-7 md:w-8 flex items-center justify-center text-foreground/70 hover:text-foreground hover:bg-muted disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                disabled={displayQty <= 0}
+              >
+                <Minus className="h-3.5 w-3.5" />
+              </button>
+              <span className="w-6 md:w-7 text-center text-sm font-bold tabular-nums select-none">
+                {displayQty}
+              </span>
+              <button
+                type="button"
+                onClick={incQty}
+                aria-label="Aumentar quantidade"
+                className="h-full w-7 md:w-8 flex items-center justify-center text-foreground/70 hover:text-foreground hover:bg-muted transition-colors"
+              >
+                <Plus className="h-3.5 w-3.5" />
+              </button>
+            </div>
             <button
               onClick={handleAdd}
-              className="w-full h-9 rounded-xl gradient-brand text-white flex items-center justify-center gap-2 text-xs font-bold shadow-card hover:opacity-90 transition-opacity"
+              aria-label={isVariable ? "Ver produto" : cartQty > 0 ? "Ver carrinho" : "Adicionar ao carrinho"}
+              className="flex-1 min-w-0 h-9 md:h-10 px-1 md:px-3 rounded-lg gradient-brand text-white flex items-center justify-center gap-1.5 md:gap-2 text-xs md:text-sm font-bold shadow-lg hover:opacity-90 transition-opacity"
             >
-              <ShoppingBag className="h-3.5 w-3.5" />
-              Adicionar
+              <ShoppingBag className="h-4 w-4 shrink-0" />
+              <span className="hidden md:inline truncate">
+                {isVariable ? "Ver" : cartQty > 0 ? "Ver carrinho" : "Adicionar"}
+              </span>
             </button>
           </div>
         )}
       </div>
 
-      {/* Info */}
-      <Link to={`/produto/${product.id}`} className="block flex-1 space-y-1">
-        <p className="text-[10px] text-muted-foreground uppercase tracking-[0.15em] font-semibold">
-          {product.category}
-        </p>
-        <h3 className={`font-medium text-foreground leading-snug line-clamp-2 group-hover:text-primary transition-colors duration-200 ${
-          featured ? "text-base" : "text-sm"
-        }`}>
+      {/* Info — limpo: nome + preco */}
+      <Link to={`/produto/${product.id}`} className="block flex-1 flex flex-col gap-1">
+        <h3 className="font-sans text-sm text-foreground leading-snug line-clamp-2 group-hover:text-foreground/70 transition-colors">
           {product.name}
         </h3>
 
-        <div className="space-y-0.5 pt-0.5">
-          <div className="flex items-baseline gap-2">
-            {product.originalPrice && (
-              <span className="text-xs text-muted-foreground line-through">
-                R$ {product.originalPrice.toFixed(2).replace(".", ",")}
-              </span>
-            )}
-            <span className={`font-bold text-foreground leading-tight ${featured ? "text-xl" : "text-lg"}`}>
-              R$ {product.price.toFixed(2).replace(".", ",")}
+        <div className="mt-auto pt-1.5 space-y-0.5">
+          <div className="flex items-center gap-1.5">
+            <img src="/icons8-pix.svg" alt="PIX" className="w-4 h-4 shrink-0" />
+            <span className="font-bold text-pix text-base leading-tight">
+              R$ {pixPrice.toFixed(2).replace(".", ",")}
             </span>
           </div>
-          <p className="text-[11px] font-semibold text-pix">
-            R$ {pixPrice.toFixed(2).replace(".", ",")} no PIX
+          <p className="text-xs text-foreground/80 pl-[22px]">
+            ou <strong>R$ {product.price.toFixed(2).replace(".", ",")}</strong>
           </p>
-          <p className="text-[11px] text-muted-foreground">
-            3x de R$ {installment}
+          <p className="text-[11px] text-muted-foreground pl-[22px]">
+            3x de R$ {installment} sem juros
           </p>
-        </div>
-
-        <div className="flex items-center gap-1 text-xs text-muted-foreground pt-0.5">
-          <span className="text-gold">★</span>
-          <span className="font-semibold text-foreground/80">{product.rating}</span>
-          <span>({product.reviews})</span>
         </div>
       </Link>
-    </motion.div>
+    </div>
   );
 };
 

@@ -7,11 +7,12 @@ export function useCreateOrder() {
   });
 }
 
-export function useOrder(id: number | undefined) {
+export function useOrder(id: number | undefined, opts?: { refetchInterval?: number | false }) {
   return useQuery({
     queryKey: ['order', id],
     queryFn: () => fetchOrder(id!),
     enabled: !!id,
+    refetchInterval: opts?.refetchInterval,
   });
 }
 
