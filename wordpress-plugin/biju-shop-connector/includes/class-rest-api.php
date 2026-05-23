@@ -191,6 +191,15 @@ class Biju_REST_API {
         ] );
 
         // ---------------------------------------------------------------
+        // Carrinho (sincronização para rastreamento de abandono)
+        // ---------------------------------------------------------------
+        register_rest_route( $ns, '/cart', [
+            'methods'             => WP_REST_Server::CREATABLE,
+            'callback'            => [ __CLASS__, 'sync_cart' ],
+            'permission_callback' => [ 'Biju_Auth', 'require_auth' ],
+        ] );
+
+        // ---------------------------------------------------------------
         // Cupons (valida contra WC_Coupon e calcula desconto)
         // ---------------------------------------------------------------
         register_rest_route( $ns, '/coupon/validate', [
@@ -577,25 +586,29 @@ class Biju_REST_API {
                 // herda do último pedido para pré-preencher o checkout.
                 if ( empty( $billing['address_1'] ) ) {
                     $billing = array_merge( $billing, [
-                        'first_name' => $last_order->get_billing_first_name(),
-                        'last_name'  => $last_order->get_billing_last_name(),
-                        'phone'      => $last_order->get_billing_phone(),
-                        'address_1'  => $last_order->get_billing_address_1(),
-                        'address_2'  => $last_order->get_billing_address_2(),
-                        'city'       => $last_order->get_billing_city(),
-                        'state'      => $last_order->get_billing_state(),
-                        'postcode'   => $last_order->get_billing_postcode(),
+                        'first_name'   => $last_order->get_billing_first_name(),
+                        'last_name'    => $last_order->get_billing_last_name(),
+                        'phone'        => $last_order->get_billing_phone(),
+                        'address_1'    => $last_order->get_billing_address_1(),
+                        'address_2'    => $last_order->get_billing_address_2(),
+                        'number'       => (string) $last_order->get_meta( '_billing_number' ),
+                        'neighborhood' => (string) $last_order->get_meta( '_billing_neighborhood' ),
+                        'city'         => $last_order->get_billing_city(),
+                        'state'        => $last_order->get_billing_state(),
+                        'postcode'     => $last_order->get_billing_postcode(),
                     ] );
                 }
                 if ( empty( $shipping['address_1'] ) ) {
                     $shipping = array_merge( $shipping, [
-                        'first_name' => $last_order->get_shipping_first_name() ?: $last_order->get_billing_first_name(),
-                        'last_name'  => $last_order->get_shipping_last_name() ?: $last_order->get_billing_last_name(),
-                        'address_1'  => $last_order->get_shipping_address_1() ?: $last_order->get_billing_address_1(),
-                        'address_2'  => $last_order->get_shipping_address_2() ?: $last_order->get_billing_address_2(),
-                        'city'       => $last_order->get_shipping_city() ?: $last_order->get_billing_city(),
-                        'state'      => $last_order->get_shipping_state() ?: $last_order->get_billing_state(),
-                        'postcode'   => $last_order->get_shipping_postcode() ?: $last_order->get_billing_postcode(),
+                        'first_name'   => $last_order->get_shipping_first_name() ?: $last_order->get_billing_first_name(),
+                        'last_name'    => $last_order->get_shipping_last_name() ?: $last_order->get_billing_last_name(),
+                        'address_1'    => $last_order->get_shipping_address_1() ?: $last_order->get_billing_address_1(),
+                        'address_2'    => $last_order->get_shipping_address_2() ?: $last_order->get_billing_address_2(),
+                        'number'       => (string) ( $last_order->get_meta( '_shipping_number' ) ?: $last_order->get_meta( '_billing_number' ) ),
+                        'neighborhood' => (string) ( $last_order->get_meta( '_shipping_neighborhood' ) ?: $last_order->get_meta( '_billing_neighborhood' ) ),
+                        'city'         => $last_order->get_shipping_city() ?: $last_order->get_billing_city(),
+                        'state'        => $last_order->get_shipping_state() ?: $last_order->get_billing_state(),
+                        'postcode'     => $last_order->get_shipping_postcode() ?: $last_order->get_billing_postcode(),
                     ] );
                 }
             }
@@ -609,6 +622,84 @@ class Biju_REST_API {
             'billing'  => $billing,
             'shipping' => $shipping,
         ], 200 );
+    }
+
+    /**
+     * POST /biju/v1/cart
+     *
+     * Sincroniza o carrinho headless com a tabela wp_wc_abandoned_carts.
+     * Chamado pelo frontend sempre que o carrinho muda.
+     * Body: { "items": [ { "product_id", "variation_id", "quantity", "name", "line_total" } ] }
+     * Array vazio em "items" = carrinho limpo → remove o registro.
+     */
+    public static function sync_cart( WP_REST_Request $request ): WP_REST_Response {
+        global $wpdb;
+
+        $user_id = Biju_Auth::get_user_from_request( $request );
+        $table   = $wpdb->prefix . 'wc_abandoned_carts';
+        $body    = $request->get_json_params();
+        $items   = is_array( $body['items'] ?? null ) ? $body['items'] : [];
+
+        if ( empty( $items ) ) {
+            $wpdb->delete( $table, [ 'user_id' => $user_id ], [ '%d' ] );
+            return new WP_REST_Response( [ 'synced' => true ], 200 );
+        }
+
+        $user  = get_userdata( $user_id );
+        $email = $user ? $user->user_email : '';
+
+        $normalized = [];
+        $qty_total  = 0;
+        foreach ( $items as $item ) {
+            $product_id   = absint( $item['product_id'] ?? 0 );
+            $variation_id = absint( $item['variation_id'] ?? 0 );
+            $quantity     = max( 1, absint( $item['quantity'] ?? 1 ) );
+            $name         = sanitize_text_field( $item['name'] ?? '' );
+            $line_total   = (float) ( $item['line_total'] ?? 0 );
+
+            if ( ! $product_id ) continue;
+
+            if ( ! $name ) {
+                $product = wc_get_product( $variation_id ?: $product_id );
+                $name    = $product ? $product->get_name() : '';
+            }
+
+            $key = md5( $product_id . '_' . $variation_id );
+            $normalized[ $key ] = [
+                'product_id'   => $product_id,
+                'variation_id' => $variation_id,
+                'quantity'     => $quantity,
+                'name'         => $name,
+                'line_total'   => $line_total,
+            ];
+            $qty_total += $quantity;
+        }
+
+        $cart_data = maybe_serialize( $normalized );
+        $now       = current_time( 'mysql' );
+
+        $existing = $wpdb->get_var( $wpdb->prepare(
+            "SELECT id FROM {$table} WHERE user_id = %d",
+            $user_id
+        ) );
+
+        if ( $existing ) {
+            $wpdb->update(
+                $table,
+                [ 'email' => $email, 'cart_data' => $cart_data, 'last_activity' => $now, 'qtdTotal' => $qty_total ],
+                [ 'id' => $existing ],
+                [ '%s', '%s', '%s', '%d' ],
+                [ '%d' ]
+            );
+        } else {
+            $wpdb->insert(
+                $table,
+                [ 'user_id' => $user_id, 'email' => $email, 'cart_data' => $cart_data, 'last_activity' => $now, 'qtdTotal' => $qty_total ],
+                [ '%d', '%s', '%s', '%s', '%d' ]
+            );
+        }
+
+        return new WP_REST_Response( [ 'synced' => true ], 200 );
     }
 
     // -------------------------------------------------------------------------

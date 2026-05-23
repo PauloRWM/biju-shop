@@ -5,8 +5,10 @@ export interface OrderBilling {
   last_name: string;
   email: string;
   phone: string;
-  address_1: string;
-  address_2?: string;
+  address_1: string;       // rua / logradouro (sem número/bairro)
+  address_2?: string;      // complemento opcional
+  number?: string;         // número do endereço (BR)
+  neighborhood?: string;   // bairro (BR — _billing_neighborhood)
   city: string;
   state: string;
   postcode: string;

@@ -192,8 +192,12 @@ const Checkout = () => {
           lastName: prev.lastName || acc.user.lastName || billing.last_name || "",
           email: prev.email || acc.user.email || billing.email || "",
           phone: prev.phone || billing.phone || "",
+          cpf: prev.cpf || billing.cpf || "",
           postcode: prev.postcode || billing.postcode || "",
           address: prev.address || billing.address_1 || "",
+          number: prev.number || billing.number || "",
+          neighborhood: prev.neighborhood || billing.neighborhood || billing.address_2 || "",
+          complement: prev.complement || "",
           city: prev.city || billing.city || "",
           state: prev.state || billing.state || "",
         }));
@@ -234,6 +238,17 @@ const Checkout = () => {
   const pixDiscount = paymentMethod === "pix" ? Math.max(0, totalPrice - couponDiscount) * 0.1 : 0;
   const discount = couponDiscount + pixDiscount;
   const total = Math.max(0, totalPrice - discount) + shipping;
+
+  // Quando o total muda (cupom aplicado/removido, frete mudou, etc.),
+  // re-valida o número de parcelas selecionado. Se a parcela atual ficar
+  // abaixo do mínimo aceito pelo MP, força volta para 1x. Isso impede
+  // que o usuário envie um cartão com parcelamento inválido.
+  useEffect(() => {
+    if (paymentMethod !== "credit") return;
+    if (installments > 1 && total / installments < MIN_AMOUNT) {
+      setInstallments(1);
+    }
+  }, [total, installments, paymentMethod]);
 
   const initiateCheckoutFired = useRef(false);
   useEffect(() => {
@@ -388,6 +403,29 @@ const Checkout = () => {
     return false;
   };
 
+  // Email: regex rigorosa (RFC 5322 simplificada) + checa domínio com TLD.
+  // Rejeita "joao@gmail" (sem .com), "joao@@gmail.com" (duplo @), espaços, etc.
+  const isValidEmail = (email: string) => {
+    const e = email.trim();
+    if (!e || e.length > 254) return false;
+    return /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/.test(e);
+  };
+
+  // Telefone BR: precisa ter 10 ou 11 dígitos (DDD + número, com ou sem 9).
+  const isValidPhone = (phone: string) => {
+    const s = phone.replace(/\D/g, "");
+    return s.length === 10 || s.length === 11;
+  };
+
+  // Número do endereço: aceita "123", "123A", "S/N", "SN" — mas não vazio
+  // nem apenas espaços/símbolos.
+  const isValidAddressNumber = (num: string) => {
+    const s = num.trim();
+    if (!s) return false;
+    // Pelo menos 1 dígito OU "S/N"/"SN" (sem número)
+    return /\d/.test(s) || /^s\/?n$/i.test(s);
+  };
+
   useEffect(() => {
     if (items.length === 0 && step !== "success") {
       navigate("/carrinho", { replace: true });
@@ -404,6 +442,16 @@ const Checkout = () => {
       pix: "pix", boleto: "billet", credit: "credit_card",
     };
 
+    // E-mail
+    if (!isValidEmail(form.email)) {
+      toast.error("E-mail inválido. Confira o endereço digitado.");
+      return;
+    }
+    // Telefone
+    if (!isValidPhone(form.phone)) {
+      toast.error("Telefone inválido. Use formato (00) 00000-0000.");
+      return;
+    }
     // CPF/CNPJ obrigatório (cartão, PIX, boleto) — exigido pelo Mercado Pago
     // como identification do payer e usado para gerar a etiqueta de envio.
     if (!form.cpf) {
@@ -412,6 +460,11 @@ const Checkout = () => {
     }
     if (!isValidCpfOrCnpj(form.cpf)) {
       toast.error("CPF ou CNPJ inválido. Confira os dígitos.");
+      return;
+    }
+    // Número do endereço
+    if (!isValidAddressNumber(form.number)) {
+      toast.error("Número do endereço inválido. Use o número da residência (ou S/N).");
       return;
     }
 
@@ -501,8 +554,13 @@ const Checkout = () => {
           last_name: form.lastName,
           email: form.email,
           phone: form.phone,
-          address_1: `${form.address}, ${form.number}${form.complement ? ` - ${form.complement}` : ""}`,
-          address_2: form.neighborhood,
+          // Campos separados — o backend grava no formato BR esperado por
+          // plugins de NF-e, Correios e Mandabem (_billing_number,
+          // _billing_neighborhood). address_1 = só a rua/logradouro.
+          address_1: form.address,
+          address_2: form.complement || undefined,
+          number: form.number,
+          neighborhood: form.neighborhood,
           city: form.city,
           state: form.state,
           postcode: form.postcode,
@@ -552,6 +610,9 @@ const Checkout = () => {
       setPaymentDetails(order.payment ?? null);
       setStep("success");
       clearCart();
+      requestAnimationFrame(() => {
+        window.scrollTo({ top: 0, behavior: "auto" });
+      });
     } catch {
       toast.error("Erro ao finalizar pedido. Tente novamente.");
     }
@@ -696,24 +757,48 @@ const Checkout = () => {
                       <Input placeholder="Sobrenome" value={form.lastName} onChange={set("lastName")} required />
                     </div>
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                      <Input type="email" placeholder="E-mail" value={form.email} onChange={set("email")} required />
-                      <Input
-                        type="tel"
-                        placeholder="Telefone (WhatsApp)"
-                        value={form.phone}
-                        onChange={handlePhoneChange}
-                        maxLength={15}
-                        required
-                      />
+                      <div className="space-y-1">
+                        <Input
+                          type="email"
+                          placeholder="E-mail"
+                          value={form.email}
+                          onChange={set("email")}
+                          required
+                          className={form.email && !isValidEmail(form.email) ? "border-destructive focus-visible:ring-destructive/30" : ""}
+                        />
+                        {form.email && !isValidEmail(form.email) && (
+                          <p className="text-xs text-destructive pl-1">E-mail inválido.</p>
+                        )}
+                      </div>
+                      <div className="space-y-1">
+                        <Input
+                          type="tel"
+                          placeholder="Telefone (WhatsApp)"
+                          value={form.phone}
+                          onChange={handlePhoneChange}
+                          maxLength={15}
+                          required
+                          className={form.phone && !isValidPhone(form.phone) ? "border-destructive focus-visible:ring-destructive/30" : ""}
+                        />
+                        {form.phone && !isValidPhone(form.phone) && (
+                          <p className="text-xs text-destructive pl-1">Telefone incompleto.</p>
+                        )}
+                      </div>
                     </div>
-                    <Input
-                      placeholder="CPF ou CNPJ"
-                      value={form.cpf}
-                      onChange={handleCpfChange}
-                      maxLength={18}
-                      inputMode="numeric"
-                      required
-                    />
+                    <div className="space-y-1">
+                      <Input
+                        placeholder="CPF ou CNPJ"
+                        value={form.cpf}
+                        onChange={handleCpfChange}
+                        maxLength={18}
+                        inputMode="numeric"
+                        required
+                        className={form.cpf && !isValidCpfOrCnpj(form.cpf) ? "border-destructive focus-visible:ring-destructive/30" : ""}
+                      />
+                      {form.cpf && !isValidCpfOrCnpj(form.cpf) && (
+                        <p className="text-xs text-destructive pl-1">CPF ou CNPJ inválido.</p>
+                      )}
+                    </div>
 
                     {!isAuthenticated && (
                       <div className="pt-2 space-y-3">
@@ -741,7 +826,8 @@ const Checkout = () => {
                                   cpf: billing.cpf || prev.cpf,
                                   postcode: shipping.postcode || billing.postcode || prev.postcode,
                                   address: shipping.address_1 || billing.address_1 || prev.address,
-                                  neighborhood: shipping.address_2 || billing.address_2 || prev.neighborhood,
+                                  number: shipping.number || billing.number || prev.number,
+                                  neighborhood: shipping.neighborhood || billing.neighborhood || shipping.address_2 || billing.address_2 || prev.neighborhood,
                                   city: shipping.city || billing.city || prev.city,
                                   state: shipping.state || billing.state || prev.state,
                                 }));
@@ -790,7 +876,18 @@ const Checkout = () => {
                         onChange={set("address")}
                         required
                       />
-                      <Input placeholder="Nº" value={form.number} onChange={set("number")} required />
+                      <div className="space-y-1">
+                        <Input
+                          placeholder="Nº"
+                          value={form.number}
+                          onChange={set("number")}
+                          required
+                          className={form.number && !isValidAddressNumber(form.number) ? "border-destructive focus-visible:ring-destructive/30" : ""}
+                        />
+                        {form.number && !isValidAddressNumber(form.number) && (
+                          <p className="text-xs text-destructive pl-1">Use número ou S/N.</p>
+                        )}
+                      </div>
                     </div>
                     <Input placeholder="Complemento (opcional)" value={form.complement} onChange={set("complement")} />
                     <div className="grid grid-cols-3 gap-3">

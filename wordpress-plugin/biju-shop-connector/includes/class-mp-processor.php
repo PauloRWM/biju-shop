@@ -128,8 +128,7 @@ class Biju_MP_Processor {
      *   bin, last_four_digits, expiration_month, expiration_year
      */
     public static function charge_card( WC_Order $order, array $card_payload ): array {
-        $cpf   = self::get_cpf_from_order( $order );
-        $email = $order->get_billing_email();
+        $cpf = self::get_cpf_from_order( $order );
 
         if ( empty( $card_payload['token'] ) ) {
             return [ 'error' => 'missing_card_token', 'message' => 'Token do cartão ausente.' ];
@@ -138,20 +137,27 @@ class Biju_MP_Processor {
             return [ 'error' => 'missing_cpf', 'message' => 'CPF é obrigatório para pagamento com cartão.' ];
         }
 
+        // Mercado Pago exige payer.email obrigatoriamente em /v1/payments mesmo
+        // para cartão (API retorna 400 sem ele). Sanitizamos email e nomes para
+        // evitar recusas por dados malformados / antifraude.
+        $email      = self::sanitize_payer_email( $order->get_billing_email(), $cpf );
+        $first_name = self::sanitize_payer_name( $order->get_billing_first_name(), 'Cliente' );
+        $last_name  = self::sanitize_payer_name( $order->get_billing_last_name(),  'Bijushop' );
+
         $body = [
-            'transaction_amount' => round( (float) $order->get_total(), 2 ),
-            'token'              => (string) $card_payload['token'],
-            'description'        => 'Pedido #' . $order->get_id(),
-            'installments'       => max( 1, (int) ( $card_payload['installments'] ?? 1 ) ),
-            'payment_method_id'  => (string) ( $card_payload['payment_method_id'] ?? '' ),
-            'external_reference' => 'WC-' . $order->get_id(),
-            'notification_url'   => self::webhook_url(),
+            'transaction_amount'   => round( (float) $order->get_total(), 2 ),
+            'token'                => (string) $card_payload['token'],
+            'description'          => 'Pedido #' . $order->get_id(),
+            'installments'         => max( 1, (int) ( $card_payload['installments'] ?? 1 ) ),
+            'payment_method_id'    => (string) ( $card_payload['payment_method_id'] ?? '' ),
+            'external_reference'   => 'WC-' . $order->get_id(),
+            'notification_url'     => self::webhook_url(),
             'statement_descriptor' => self::statement_descriptor(),
-            'capture'            => true, // captura automática
-            'payer'              => [
+            'capture'              => true, // captura automática
+            'payer'                => [
                 'email'          => $email,
-                'first_name'     => $order->get_billing_first_name(),
-                'last_name'      => $order->get_billing_last_name(),
+                'first_name'     => $first_name,
+                'last_name'      => $last_name,
                 'identification' => [
                     'type'   => 'CPF',
                     'number' => $cpf,
@@ -173,11 +179,13 @@ class Biju_MP_Processor {
      * Cobra via PIX. Retorna QR Code base64 + copia-e-cola pro frontend.
      */
     public static function charge_pix( WC_Order $order ): array {
-        $cpf   = self::get_cpf_from_order( $order );
-        $email = $order->get_billing_email();
+        $cpf = self::get_cpf_from_order( $order );
         if ( ! $cpf ) {
             return [ 'error' => 'missing_cpf', 'message' => 'CPF é obrigatório para pagar com PIX.' ];
         }
+        $email      = self::sanitize_payer_email( $order->get_billing_email(), $cpf );
+        $first_name = self::sanitize_payer_name( $order->get_billing_first_name(), 'Cliente' );
+        $last_name  = self::sanitize_payer_name( $order->get_billing_last_name(),  'Bijushop' );
 
         // Expiração: 10 horas. O cliente tem prazo confortável para pagar e o
         // webhook do MP atualiza o pedido automaticamente quando a transferência
@@ -193,8 +201,8 @@ class Biju_MP_Processor {
             'date_of_expiration'   => $expires_at,
             'payer'                => [
                 'email'          => $email,
-                'first_name'     => $order->get_billing_first_name(),
-                'last_name'      => $order->get_billing_last_name(),
+                'first_name'     => $first_name,
+                'last_name'      => $last_name,
                 'identification' => [ 'type' => 'CPF', 'number' => $cpf ],
             ],
             'metadata' => [
@@ -210,11 +218,13 @@ class Biju_MP_Processor {
      * Cobra via boleto bancário (bolbradesco).
      */
     public static function charge_boleto( WC_Order $order ): array {
-        $cpf   = self::get_cpf_from_order( $order );
-        $email = $order->get_billing_email();
+        $cpf = self::get_cpf_from_order( $order );
         if ( ! $cpf ) {
             return [ 'error' => 'missing_cpf', 'message' => 'CPF é obrigatório para gerar boleto.' ];
         }
+        $email      = self::sanitize_payer_email( $order->get_billing_email(), $cpf );
+        $first_name = self::sanitize_payer_name( $order->get_billing_first_name(), 'Cliente' );
+        $last_name  = self::sanitize_payer_name( $order->get_billing_last_name(),  'Bijushop' );
 
         // Boleto vence em 3 dias úteis (aprox 5 corridos pra cobrir fim de semana)
         $expires_at = gmdate( 'Y-m-d\TH:i:s.000P', time() + 5 * 86400 );
@@ -228,14 +238,14 @@ class Biju_MP_Processor {
             'date_of_expiration'  => $expires_at,
             'payer'               => [
                 'email'           => $email,
-                'first_name'      => $order->get_billing_first_name(),
-                'last_name'       => $order->get_billing_last_name(),
+                'first_name'      => $first_name,
+                'last_name'       => $last_name,
                 'identification'  => [ 'type' => 'CPF', 'number' => $cpf ],
                 'address'         => [
                     'zip_code'     => preg_replace( '/\D/', '', $order->get_billing_postcode() ),
                     'street_name'  => $order->get_billing_address_1(),
                     'street_number'=> $order->get_meta( '_billing_number' ) ?: 'S/N',
-                    'neighborhood' => $order->get_billing_address_2(),
+                    'neighborhood' => $order->get_meta( '_billing_neighborhood' ) ?: $order->get_billing_address_2(),
                     'city'         => $order->get_billing_city(),
                     'federal_unit' => $order->get_billing_state(),
                 ],
@@ -373,6 +383,29 @@ class Biju_MP_Processor {
     private static function get_cpf_from_order( WC_Order $order ): string {
         $cpf = $order->get_meta( '_billing_cpf' ) ?: $order->get_meta( '_cpf' ) ?: '';
         return preg_replace( '/\D/', '', (string) $cpf );
+    }
+
+    /**
+     * Normaliza email para enviar ao MP. Se o valor estiver vazio ou inválido,
+     * devolve um placeholder válido baseado no CPF (formato aceito pela API).
+     */
+    private static function sanitize_payer_email( string $email, string $cpf_fallback ): string {
+        $email = trim( strtolower( $email ) );
+        if ( $email && is_email( $email ) ) return $email;
+        $cpf_fallback = preg_replace( '/\D/', '', $cpf_fallback );
+        if ( ! $cpf_fallback ) $cpf_fallback = (string) time();
+        return 'cliente-' . $cpf_fallback . '@checkout.bijushop.com.br';
+    }
+
+    /**
+     * Sanitiza nome do payer pro MP (sem acentos, sem dígitos, sem símbolos).
+     * O antifraude rejeita "first_name inválido" quando vem com . / @ # etc.
+     */
+    private static function sanitize_payer_name( string $name, string $fallback ): string {
+        $name = function_exists( 'remove_accents' ) ? remove_accents( $name ) : $name;
+        $name = preg_replace( '/[^A-Za-z\s]/', '', (string) $name );
+        $name = trim( preg_replace( '/\s+/', ' ', $name ) );
+        return $name !== '' ? $name : $fallback;
     }
 
     public static function webhook_url(): string {

@@ -49,6 +49,14 @@ class Biju_Orders {
         }
 
         // Billing
+        // Number/neighborhood não fazem parte do core do WC — ficam em meta
+        // próprio (_billing_number, _billing_neighborhood). Esse é o padrão
+        // que plugins BR (Brazilian Market on WooCommerce, NF-e, etiqueta
+        // dos Correios, mandabem) leem. Sem isso a etiqueta sai sem bairro
+        // e sem número, o que faz os Correios devolverem a encomenda.
+        $b_number       = sanitize_text_field( (string) ( $billing['number'] ?? '' ) );
+        $b_neighborhood = sanitize_text_field( (string) ( $billing['neighborhood'] ?? '' ) );
+
         $order->set_address( [
             'first_name' => sanitize_text_field( $billing['first_name'] ?? '' ),
             'last_name'  => sanitize_text_field( $billing['last_name'] ?? '' ),
@@ -62,8 +70,20 @@ class Biju_Orders {
             'country'    => sanitize_text_field( $billing['country'] ?? 'BR' ),
         ], 'billing' );
 
+        if ( $b_number ) {
+            $order->update_meta_data( '_billing_number', $b_number );
+            $order->update_meta_data( 'billing_number', $b_number );
+        }
+        if ( $b_neighborhood ) {
+            $order->update_meta_data( '_billing_neighborhood', $b_neighborhood );
+            $order->update_meta_data( 'billing_neighborhood', $b_neighborhood );
+        }
+
         // Shipping = mesmo que billing se não fornecido
         $shipping = $body['shipping'] ?? $billing;
+        $s_number       = sanitize_text_field( (string) ( $shipping['number'] ?? $b_number ) );
+        $s_neighborhood = sanitize_text_field( (string) ( $shipping['neighborhood'] ?? $b_neighborhood ) );
+
         $order->set_address( [
             'first_name' => sanitize_text_field( $shipping['first_name'] ?? '' ),
             'last_name'  => sanitize_text_field( $shipping['last_name'] ?? '' ),
@@ -74,6 +94,15 @@ class Biju_Orders {
             'postcode'   => sanitize_text_field( $shipping['postcode'] ?? '' ),
             'country'    => sanitize_text_field( $shipping['country'] ?? 'BR' ),
         ], 'shipping' );
+
+        if ( $s_number ) {
+            $order->update_meta_data( '_shipping_number', $s_number );
+            $order->update_meta_data( 'shipping_number', $s_number );
+        }
+        if ( $s_neighborhood ) {
+            $order->update_meta_data( '_shipping_neighborhood', $s_neighborhood );
+            $order->update_meta_data( 'shipping_neighborhood', $s_neighborhood );
+        }
 
         // Itens do carrinho
         foreach ( (array) $body['items'] as $item ) {
@@ -211,6 +240,12 @@ class Biju_Orders {
         $order->calculate_totals();
         $order->set_status( 'pending', 'Pedido recebido via Biju Shop.' );
         $order->save();
+
+        // Remove carrinho abandonado — o usuário finalizou o checkout
+        if ( $user_id ) {
+            global $wpdb;
+            $wpdb->delete( $wpdb->prefix . 'wc_abandoned_carts', [ 'user_id' => $user_id ], [ '%d' ] );
+        }
 
         // Dados extras de pagamento (ex: card token vindo do Mercado Pago JS v2)
         $card_payload = is_array( $body['card'] ?? null ) ? $body['card'] : [];
