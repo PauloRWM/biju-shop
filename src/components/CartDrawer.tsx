@@ -55,7 +55,7 @@ const CartDrawer = () => {
               <div className="space-y-4">
                 {items.map((item) => (
                   <div
-                    key={item.product.id}
+                    key={`${item.product.id}-${item.variationId ?? 0}`}
                     className="flex gap-4 pb-4 border-b last:border-0"
                   >
                     <Link to={`/produto/${item.product.id}`} className="shrink-0" onClick={closeCart}>
@@ -81,7 +81,7 @@ const CartDrawer = () => {
                       <div className="flex items-center justify-between">
                         <div className="flex items-center border rounded-lg overflow-hidden">
                           <button
-                            onClick={() => updateQuantity(item.product.id, item.quantity - 1)}
+                            onClick={() => updateQuantity(item.product.id, item.quantity - 1, item.variationId)}
                             className="p-2 hover:bg-muted transition-colors"
                             aria-label="Diminuir quantidade"
                           >
@@ -89,15 +89,20 @@ const CartDrawer = () => {
                           </button>
                           <span className="px-4 text-sm font-medium min-w-[2.5rem] text-center">{item.quantity}</span>
                           <button
-                            onClick={() => updateQuantity(item.product.id, item.quantity + 1)}
-                            className="p-2 hover:bg-muted transition-colors"
+                            onClick={() => updateQuantity(item.product.id, item.quantity + 1, item.variationId)}
+                            disabled={
+                              typeof item.product.stockQuantity === "number" &&
+                              item.product.stockQuantity >= 0 &&
+                              item.quantity >= item.product.stockQuantity
+                            }
+                            className="p-2 hover:bg-muted transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
                             aria-label="Aumentar quantidade"
                           >
                             <Plus className="h-4 w-4" />
                           </button>
                         </div>
                         <button
-                          onClick={() => removeItem(item.product.id)}
+                          onClick={() => removeItem(item.product.id, item.variationId)}
                           className="p-2 text-muted-foreground hover:text-destructive transition-colors"
                           aria-label="Remover item"
                         >

@@ -6,20 +6,47 @@
 
 const BASE_URL = (import.meta.env.VITE_API_URL as string) || '/wp-json/biju/v1';
 
-// Token JWT armazenado em memória (evita XSS via localStorage)
+// Token JWT em localStorage para persistir entre sessões/abas. O JWT tem
+// expiração no servidor (biju_jwt_expiry, padrão 1h), então o risco de XSS
+// roubar o token é limitado pela vida útil dele.
 let _token: string | null = null;
 
 export function setAuthToken(token: string | null) {
   _token = token;
-  if (token) {
-    sessionStorage.setItem('biju_token', token);
-  } else {
+  try {
+    if (token) {
+      localStorage.setItem('biju_token', token);
+    } else {
+      localStorage.removeItem('biju_token');
+    }
+    // Migra/limpa o storage antigo se existir
     sessionStorage.removeItem('biju_token');
+  } catch {
+    // Modo privado pode bloquear storage — tudo bem, o token fica em memória
   }
 }
 
 export function getAuthToken(): string | null {
-  return _token ?? sessionStorage.getItem('biju_token');
+  if (_token) return _token;
+  try {
+    // Lê primeiro do localStorage (novo). Se vier do sessionStorage antigo,
+    // migra para localStorage para não perder no próximo refresh.
+    const fromLocal = localStorage.getItem('biju_token');
+    if (fromLocal) {
+      _token = fromLocal;
+      return fromLocal;
+    }
+    const fromSession = sessionStorage.getItem('biju_token');
+    if (fromSession) {
+      _token = fromSession;
+      localStorage.setItem('biju_token', fromSession);
+      sessionStorage.removeItem('biju_token');
+      return fromSession;
+    }
+  } catch {
+    // ignore
+  }
+  return null;
 }
 
 // ---------------------------------------------------------------------------
@@ -98,4 +125,7 @@ export const api = {
 
   put: <T>(path: string, body?: unknown) =>
     request<T>(path, { method: 'PUT', body }),
+
+  delete: <T>(path: string) =>
+    request<T>(path, { method: 'DELETE' }),
 };

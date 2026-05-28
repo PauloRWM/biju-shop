@@ -13,6 +13,7 @@ export interface ProductVariation {
   price: number;
   regularPrice?: number;
   inStock: boolean;
+  stockQuantity?: number | null;
   image?: string;
   sku?: string;
 }
@@ -33,6 +34,7 @@ export interface Product {
   material: string;
   colors: string[];
   inStock: boolean;
+  stockQuantity?: number | null;
   type?: string;
   attributes?: ProductAttribute[];
   variations?: ProductVariation[];

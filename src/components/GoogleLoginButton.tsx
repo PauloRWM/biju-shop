@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { fetchGoogleConfig, loginWithGoogle } from "@/services/auth";
 import { toast } from "sonner";
+import { trackCompleteRegistration } from "@/services/metaPixel";
 
 interface GoogleCredentialResponse {
   credential: string;
@@ -105,8 +106,20 @@ const GoogleLoginButton = ({ onSuccess, text = "continue_with", disabled }: Prop
           callback: async (response) => {
             if (!response.credential) return;
             try {
-              await loginWithGoogle(response.credential);
+              const auth = await loginWithGoogle(response.credential);
               toast.success("Login com Google realizado!");
+              if (auth.created) {
+                // Conta criada agora — dispara CompleteRegistration
+                void trackCompleteRegistration({
+                  method: "google",
+                  userData: {
+                    email: auth.user.email,
+                    first_name: auth.user.firstName,
+                    last_name: auth.user.lastName,
+                    country: "br",
+                  },
+                });
+              }
               onSuccessRef.current();
             } catch (err) {
               const message = err instanceof Error ? err.message : "Falha no login com Google";

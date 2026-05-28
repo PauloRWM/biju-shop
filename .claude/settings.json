@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(ls \"D:/Wesley Bijoux/carrinho-abandonado\")",
+      "Read(//d/Wesley Bijoux/carrinho-abandonado/**)",
+      "Bash(npm run *)"
+    ]
+  }
+}

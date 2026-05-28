@@ -122,6 +122,12 @@ const ProductDetail = () => {
   const effectiveInStock = matchedVariation
     ? matchedVariation.inStock
     : product.inStock;
+  // Estoque máximo disponível. null/undefined = produto não gerencia estoque (ilimitado).
+  const effectiveStock = matchedVariation
+    ? matchedVariation.stockQuantity
+    : product.stockQuantity;
+  const hasStockLimit =
+    typeof effectiveStock === "number" && effectiveStock >= 0;
 
   const variationLabel = matchedVariation
     ? variationAttrs
@@ -163,6 +169,10 @@ const ProductDetail = () => {
       toast.error("Selecione todas as opções antes.");
       return;
     }
+    if (hasStockLimit && displayQty >= (effectiveStock as number)) {
+      toast.error(`Apenas ${effectiveStock} em estoque.`);
+      return;
+    }
     if (cartQty === 0) {
       addItem(product, 1, {
         variationId: matchedVariation?.id,
@@ -185,19 +195,9 @@ const ProductDetail = () => {
       toast.error("Selecione todas as opções antes de comprar.");
       return;
     }
-    // Se ainda não há nada no carrinho deste produto, adiciona 1 antes de ir.
-    if (cartQty <= 0) {
-      addItem(product, 1, {
-        variationId: matchedVariation?.id,
-        variationLabel,
-        unitPrice: effectivePrice,
-      });
-      trackAddToCart({
-        productId: product.id,
-        name: product.name,
-        price: effectivePrice,
-        quantity: 1,
-      });
+    if (displayQty <= 0) {
+      toast.error("Escolha a quantidade antes de comprar.");
+      return;
     }
     navigate("/checkout");
   };
@@ -529,7 +529,7 @@ const ProductDetail = () => {
                 </span>
                 <button
                   onClick={incQty}
-                  disabled={!effectiveInStock}
+                  disabled={!effectiveInStock || (hasStockLimit && displayQty >= (effectiveStock as number))}
                   className="px-2 h-full text-sm hover:bg-muted disabled:opacity-40 transition-colors"
                   aria-label="Aumentar"
                 >
@@ -538,7 +538,7 @@ const ProductDetail = () => {
               </div>
               <Button
                 className="flex-1 min-w-0 gap-1 h-11 px-1.5 text-[11px] sm:text-xs font-bold shadow-md"
-                disabled={!effectiveInStock || (hasVariations && !matchedVariation)}
+                disabled={!effectiveInStock || (hasVariations && !matchedVariation) || displayQty <= 0}
                 onClick={handleBuyNow}
                 title="Comprar Agora"
               >

@@ -30,6 +30,7 @@ import { ApiError } from "@/services/api";
 import { toast } from "sonner";
 import { useNavigate, useLocation } from "react-router-dom";
 import GoogleLoginButton from "@/components/GoogleLoginButton";
+import { trackCompleteRegistration } from "@/services/metaPixel";
 
 const Account = () => {
   const navigate = useNavigate();
@@ -159,6 +160,11 @@ const Account = () => {
 
         // Registrar novo usuário
         await register(formData.name, formData.email, formData.password);
+        // CompleteRegistration (Meta Pixel + CAPI)
+        void trackCompleteRegistration({
+          method: "email",
+          userData: { email: formData.email, country: "br" },
+        });
         toast.success("Conta criada com sucesso!");
         setIsLoggedIn(true);
       } else {

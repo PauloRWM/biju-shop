@@ -1,13 +1,11 @@
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
-import { User, Search, Menu, X, ChevronDown, Heart, Package, Loader2 } from "lucide-react";
+import { User, Search, Loader2 } from "lucide-react";
 import { useState, useEffect, useRef, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import CartDrawer from "@/components/CartDrawer";
-import { useHomepageConfig } from "@/hooks/useProducts";
 import { fetchProducts } from "@/services/products";
 import type { Product } from "@/data/products";
-
-const MAX_VISIBLE_NAV = 8;
+import { trackSearch } from "@/services/metaPixel";
 
 function useDebounce(value: string, delay = 300) {
   const [debounced, setDebounced] = useState(value);
@@ -19,21 +17,17 @@ function useDebounce(value: string, delay = 300) {
 }
 
 const Header = () => {
-  const [mobileOpen, setMobileOpen] = useState(false);
   const [mobileSearchOpen, setMobileSearchOpen] = useState(false);
   const [searchValue, setSearchValue] = useState("");
   const [scrolled, setScrolled] = useState(false);
   // hidden = true quando o usuário rolou pra baixo. Volta a false ao subir.
   const [hidden, setHidden] = useState(false);
-  const [moreOpen, setMoreOpen] = useState(false);
   const [accountOpen, setAccountOpen] = useState(false);
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
-  const moreRef = useRef<HTMLDivElement>(null);
   const accountRef = useRef<HTMLDivElement>(null);
   const searchRef = useRef<HTMLDivElement>(null);
   const mobileSearchRef = useRef<HTMLInputElement>(null);
-  const { data: config } = useHomepageConfig();
 
   // Ajax search state
   const [suggestions, setSuggestions] = useState<Product[]>([]);
@@ -87,7 +81,6 @@ const Header = () => {
 
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
-      if (moreRef.current && !moreRef.current.contains(e.target as Node)) setMoreOpen(false);
       if (accountRef.current && !accountRef.current.contains(e.target as Node)) setAccountOpen(false);
       if (searchRef.current && !searchRef.current.contains(e.target as Node)) setShowSuggestions(false);
     };
@@ -119,26 +112,14 @@ const Header = () => {
     return () => { cancelled = true; };
   }, [debouncedSearch]);
 
-  const dynamicLinks = config?.menu ?? [];
-  const navLinks = [
-    { label: "Inicio", to: "/" },
-    { label: "Todos os Produtos", to: "/shop" },
-    ...dynamicLinks.map(item => ({
-      label: item.label,
-      to: item.slug ? `/shop?cat=${encodeURIComponent(item.label)}` : (item.url ?? "/"),
-    })),
-  ];
-
-  const visibleLinks = navLinks.slice(0, MAX_VISIBLE_NAV);
-  const overflowLinks = navLinks.slice(MAX_VISIBLE_NAV);
-
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
     setShowSuggestions(false);
-    if (searchValue.trim()) {
-      navigate(`/shop?q=${encodeURIComponent(searchValue.trim())}`);
+    const q = searchValue.trim();
+    if (q) {
+      void trackSearch(q);
+      navigate(`/shop?q=${encodeURIComponent(q)}`);
       setMobileSearchOpen(false);
-      setMobileOpen(false);
     } else {
       navigate("/shop");
     }
@@ -315,17 +296,9 @@ const Header = () => {
             </div>
           </div>
 
-          {/* ─── Mobile: Hamburger | Logo | Search + Cart ─── */}
+          {/* ─── Mobile: Logo | Search + Cart ─── */}
           <div className="flex md:hidden items-center justify-between h-14">
-            <button
-              onClick={() => setMobileOpen(!mobileOpen)}
-              className="p-2 -ml-2 text-foreground/80 hover:text-foreground transition-colors"
-              aria-label="Menu"
-            >
-              {mobileOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
-            </button>
-
-            <Link to="/" onClick={() => setSearchValue("")} className="absolute left-1/2 -translate-x-1/2 transition-opacity hover:opacity-80">
+            <Link to="/" onClick={() => setSearchValue("")} className="transition-opacity hover:opacity-80">
               <img
                 src="/logo.png"
                 alt="Wesley Bijoux"
@@ -346,55 +319,6 @@ const Header = () => {
               </Link>
               <CartDrawer />
             </div>
-          </div>
-        </div>
-
-        {/* ─── Tier 3: Desktop Navigation Bar ─── */}
-        <div className="hidden md:block border-t border-border/20">
-          <div className="container mx-auto px-4 lg:px-8">
-            <nav className="flex items-center justify-center gap-0.5 py-1.5">
-              {visibleLinks.map((link) => (
-                <Link
-                  key={link.label}
-                  to={link.to}
-                  className="px-3 py-1.5 text-[11.5px] font-sans font-semibold uppercase tracking-[0.14em] text-foreground/70 hover:text-foreground hover:bg-muted/40 rounded-md transition-all duration-200 whitespace-nowrap"
-                >
-                  {link.label}
-                </Link>
-              ))}
-              {overflowLinks.length > 0 && (
-                <div className="relative" ref={moreRef}>
-                  <button
-                    onClick={() => setMoreOpen((v) => !v)}
-                    className="flex items-center gap-1 px-3 py-1.5 text-[11.5px] font-sans font-semibold uppercase tracking-[0.14em] text-foreground/70 hover:text-foreground hover:bg-muted/40 rounded-md transition-all duration-200 whitespace-nowrap"
-                  >
-                    Mais <ChevronDown className={`h-3 w-3 transition-transform duration-200 ${moreOpen ? "rotate-180" : ""}`} />
-                  </button>
-                  <AnimatePresence>
-                    {moreOpen && (
-                      <motion.div
-                        initial={{ opacity: 0, y: -6 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        exit={{ opacity: 0, y: -6 }}
-                        transition={{ duration: 0.15 }}
-                        className="absolute top-full left-1/2 -translate-x-1/2 mt-2 bg-background border border-border/40 shadow-xl rounded-xl py-2 z-50 min-w-[180px]"
-                      >
-                        {overflowLinks.map((link) => (
-                          <Link
-                            key={link.label}
-                            to={link.to}
-                            onClick={() => setMoreOpen(false)}
-                            className="block px-5 py-2.5 text-[11px] font-sans font-medium uppercase tracking-[0.12em] text-foreground/70 hover:text-foreground hover:bg-muted/50 transition-colors whitespace-nowrap"
-                          >
-                            {link.label}
-                          </Link>
-                        ))}
-                      </motion.div>
-                    )}
-                  </AnimatePresence>
-                </div>
-              )}
-            </nav>
           </div>
         </div>
 
@@ -456,57 +380,6 @@ const Header = () => {
           )}
         </AnimatePresence>
 
-        {/* ─── Mobile nav ─── */}
-        <AnimatePresence>
-          {mobileOpen && (
-            <motion.nav
-              initial={{ height: 0, opacity: 0 }}
-              animate={{ height: "auto", opacity: 1 }}
-              exit={{ height: 0, opacity: 0 }}
-              transition={{ duration: 0.3, ease: "easeInOut" }}
-              className="md:hidden bg-background border-t border-border/30 overflow-hidden"
-            >
-              <div className="container px-4 py-5 flex flex-col gap-0.5">
-                {navLinks.map((link, i) => (
-                  <motion.div
-                    key={link.label}
-                    initial={{ opacity: 0, x: -10 }}
-                    animate={{ opacity: 1, x: 0 }}
-                    transition={{ delay: i * 0.03 }}
-                  >
-                    <Link
-                      to={link.to}
-                      onClick={() => setMobileOpen(false)}
-                      className="block text-[13px] font-sans font-medium uppercase tracking-[0.1em] text-foreground/80 hover:text-foreground hover:bg-muted/40 transition-colors py-3 px-3 rounded-lg border-b border-border/5"
-                    >
-                      {link.label}
-                    </Link>
-                  </motion.div>
-                ))}
-
-                {/* Mobile account section */}
-                <div className="border-t border-border/20 mt-3 pt-3">
-                  <Link
-                    to="/conta"
-                    onClick={() => setMobileOpen(false)}
-                    className="flex items-center gap-3 text-[13px] font-sans font-medium uppercase tracking-[0.1em] text-foreground/80 hover:text-foreground py-3 px-3 rounded-lg hover:bg-muted/40 transition-colors"
-                  >
-                    <User className="h-4 w-4" />
-                    Minha Conta
-                  </Link>
-                  <Link
-                    to="/conta"
-                    onClick={() => setMobileOpen(false)}
-                    className="flex items-center gap-3 text-[13px] font-sans font-medium uppercase tracking-[0.1em] text-foreground/80 hover:text-foreground py-3 px-3 rounded-lg hover:bg-muted/40 transition-colors"
-                  >
-                    <Package className="h-4 w-4" />
-                    Meus Pedidos
-                  </Link>
-                </div>
-              </div>
-            </motion.nav>
-          )}
-        </AnimatePresence>
       </header>
     </div>
   );

@@ -35,6 +35,7 @@ export interface CreateOrderPayload {
   cpf?: string;
   fbp?: string;
   fbc?: string;
+  checkout_url?: string;
   card?: {
     token: string;
     payment_method_id: string;

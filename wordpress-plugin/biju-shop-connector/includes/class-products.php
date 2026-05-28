@@ -201,6 +201,9 @@ class Biju_Products {
                     'price'      => isset( $v['display_price'] ) ? (float) $v['display_price'] : 0.0,
                     'regularPrice' => isset( $v['display_regular_price'] ) ? (float) $v['display_regular_price'] : 0.0,
                     'inStock'    => ! empty( $v['is_in_stock'] ),
+                    'stockQuantity' => isset( $v['max_qty'] ) && $v['max_qty'] !== ''
+                        ? (int) $v['max_qty']
+                        : null,
                     'image'      => is_string( $vimg ) ? $vimg : '',
                     'sku'        => (string) ( $v['sku'] ?? '' ),
                 ];

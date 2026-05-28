@@ -51,6 +51,7 @@ require_once BIJU_CONNECTOR_PATH . 'includes/class-newsletter.php';
 require_once BIJU_CONNECTOR_PATH . 'includes/class-meta-pixel.php';
 require_once BIJU_CONNECTOR_PATH . 'includes/class-shipping.php';
 require_once BIJU_CONNECTOR_PATH . 'includes/class-coupons.php';
+require_once BIJU_CONNECTOR_PATH . 'includes/class-abandoned-cart.php';
 require_once BIJU_CONNECTOR_PATH . 'includes/class-rest-api.php';
 
 // Inicializar

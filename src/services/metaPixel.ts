@@ -20,9 +20,10 @@ interface MetaConfig {
 }
 
 interface FbqFn {
-  (cmd: 'init', pixelId: string): void;
+  (cmd: 'init', pixelId: string, advancedMatching?: Record<string, string>): void;
   (cmd: 'track', event: string, params?: Record<string, unknown>, opts?: { eventID?: string }): void;
   (cmd: 'trackCustom', event: string, params?: Record<string, unknown>, opts?: { eventID?: string }): void;
+  (cmd: 'set', key: string, value: unknown): void;
   callMethod?: (...args: unknown[]) => void;
   queue?: unknown[];
   loaded?: boolean;
@@ -39,6 +40,7 @@ declare global {
 
 let configPromise: Promise<MetaConfig | null> | null = null;
 let pixelLoaded = false;
+let pixelInitArgs: { pixelId: string; advanced?: Record<string, string> } | null = null;
 
 const getConfig = (): Promise<MetaConfig | null> => {
   if (configPromise) return configPromise;
@@ -48,31 +50,44 @@ const getConfig = (): Promise<MetaConfig | null> => {
   return configPromise;
 };
 
-const loadPixel = (pixelId: string) => {
-  if (pixelLoaded || typeof window === 'undefined') return;
-  pixelLoaded = true;
+const loadPixel = (pixelId: string, advanced?: Record<string, string>) => {
+  if (typeof window === 'undefined') return;
+  if (!pixelLoaded) {
+    pixelLoaded = true;
+    // Snippet oficial do Meta (https://developers.facebook.com/docs/meta-pixel/get-started)
+    /* eslint-disable */
+    (function (f: any, b: Document, e: string, v: string) {
+      if (f.fbq) return;
+      const n: any = (f.fbq = function () {
+        n.callMethod ? n.callMethod.apply(n, arguments) : n.queue.push(arguments);
+      });
+      if (!f._fbq) f._fbq = n;
+      n.push = n;
+      n.loaded = true;
+      n.version = '2.0';
+      n.queue = [];
+      const t = b.createElement(e) as HTMLScriptElement;
+      t.async = true;
+      t.src = v;
+      const s = b.getElementsByTagName(e)[0];
+      s.parentNode?.insertBefore(t, s);
+    })(window, document, 'script', 'https://connect.facebook.net/en_US/fbevents.js');
+    /* eslint-enable */
+  }
 
-  // Snippet oficial do Meta (https://developers.facebook.com/docs/meta-pixel/get-started)
-  /* eslint-disable */
-  (function (f: any, b: Document, e: string, v: string) {
-    if (f.fbq) return;
-    const n: any = (f.fbq = function () {
-      n.callMethod ? n.callMethod.apply(n, arguments) : n.queue.push(arguments);
-    });
-    if (!f._fbq) f._fbq = n;
-    n.push = n;
-    n.loaded = true;
-    n.version = '2.0';
-    n.queue = [];
-    const t = b.createElement(e) as HTMLScriptElement;
-    t.async = true;
-    t.src = v;
-    const s = b.getElementsByTagName(e)[0];
-    s.parentNode?.insertBefore(t, s);
-  })(window, document, 'script', 'https://connect.facebook.net/en_US/fbevents.js');
-  /* eslint-enable */
-
-  window.fbq?.('init', pixelId);
+  // Re-init quando os dados de Advanced Matching mudarem (cliente preencheu mais campos
+  // no checkout). O Meta aceita múltiplos inits do mesmo pixelId — o último prevalece.
+  const sameAdvanced =
+    pixelInitArgs &&
+    pixelInitArgs.pixelId === pixelId &&
+    JSON.stringify(pixelInitArgs.advanced ?? {}) === JSON.stringify(advanced ?? {});
+  if (sameAdvanced) return;
+  pixelInitArgs = { pixelId, advanced };
+  if (advanced && Object.keys(advanced).length > 0) {
+    window.fbq?.('init', pixelId, advanced);
+  } else {
+    window.fbq?.('init', pixelId);
+  }
 };
 
 const readCookie = (name: string): string | undefined => {
@@ -81,9 +96,17 @@ const readCookie = (name: string): string | undefined => {
   return m ? decodeURIComponent(m[1]) : undefined;
 };
 
+const writeCookie = (name: string, value: string, days = 180) => {
+  if (typeof document === 'undefined') return;
+  const exp = new Date(Date.now() + days * 86400 * 1000).toUTCString();
+  document.cookie = `${name}=${encodeURIComponent(value)}; expires=${exp}; path=/; SameSite=Lax`;
+};
+
 /**
  * Lê o `_fbc` do cookie ou monta a partir do parâmetro `fbclid` da URL.
  * Formato esperado: fb.1.<timestamp>.<fbclid>
+ * Quando construído a partir do fbclid, persiste como cookie (180 dias) para
+ * que visitas subsequentes sem fbclid mantenham a atribuição.
  */
 const resolveFbc = (): string | undefined => {
   const cookie = readCookie('_fbc');
@@ -91,7 +114,9 @@ const resolveFbc = (): string | undefined => {
   if (typeof window === 'undefined') return undefined;
   const fbclid = new URLSearchParams(window.location.search).get('fbclid');
   if (!fbclid) return undefined;
-  return `fb.1.${Date.now()}.${fbclid}`;
+  const value = `fb.1.${Date.now()}.${fbclid}`;
+  writeCookie('_fbc', value, 180);
+  return value;
 };
 
 export const getMetaCookies = () => ({
@@ -104,6 +129,11 @@ export interface MetaUserData {
   phone?: string;
   first_name?: string;
   last_name?: string;
+  city?: string;
+  state?: string;
+  zp?: string;        // CEP (só dígitos)
+  country?: string;   // ISO 2-letter, lowercase (ex: 'br')
+  external_id?: string; // CPF, só dígitos
 }
 
 export interface MetaContent {
@@ -122,6 +152,7 @@ export interface MetaCustomData {
   contents?: MetaContent[];
   search_string?: string;
   num_items?: number;
+  payment_type?: string; // AddPaymentInfo: 'pix' | 'credit_card' | 'boleto' etc
 }
 
 const newEventId = (): string => {
@@ -152,11 +183,71 @@ interface TrackOptions {
   customData?: MetaCustomData;
 }
 
+/**
+ * Converte MetaUserData para o formato de Advanced Matching aceito pelo fbq('init').
+ * O pixel do navegador hasheia internamente — passamos texto puro normalizado.
+ * Telefone BR vira E.164 sem +.
+ */
+const toAdvancedMatching = (u?: MetaUserData): Record<string, string> => {
+  if (!u) return {};
+  const out: Record<string, string> = {};
+  if (u.email) out.em = u.email.trim().toLowerCase();
+  if (u.phone) {
+    const digits = u.phone.replace(/\D/g, '');
+    if (digits.length === 10 || digits.length === 11) {
+      out.ph = '55' + digits;
+    } else if (digits) {
+      out.ph = digits;
+    }
+  }
+  if (u.first_name) out.fn = u.first_name.trim().toLowerCase();
+  if (u.last_name)  out.ln = u.last_name.trim().toLowerCase();
+  if (u.city)       out.ct = u.city.trim().toLowerCase().replace(/\s+/g, '');
+  if (u.state)      out.st = u.state.trim().toLowerCase();
+  if (u.zp)         out.zp = u.zp.replace(/\D/g, '');
+  if (u.country)    out.country = u.country.trim().toLowerCase();
+  if (u.external_id) out.external_id = u.external_id.replace(/\D/g, '');
+  return out;
+};
+
+// Advanced Matching global — última versão conhecida (de qualquer evento).
+// Acumula ao longo da sessão para que eventos posteriores se beneficiem.
+const currentAdvancedMatching: Record<string, string> = {};
+
+/**
+ * Atualiza o Advanced Matching do pixel sem disparar evento. Útil para
+ * passar email/telefone assim que o usuário digita no checkout.
+ */
+export const setUserData = async (userData: MetaUserData) => {
+  const config = await getConfig();
+  if (!config?.enabled || !config.pixel_id) return;
+  const incoming = toAdvancedMatching(userData);
+  let changed = false;
+  for (const [k, v] of Object.entries(incoming)) {
+    if (currentAdvancedMatching[k] !== v) {
+      currentAdvancedMatching[k] = v;
+      changed = true;
+    }
+  }
+  if (!changed) return;
+  loadPixel(config.pixel_id, currentAdvancedMatching);
+};
+
 const track = async (eventName: string, opts: TrackOptions = {}) => {
   const config = await getConfig();
   if (!config?.enabled || !config.pixel_id) return;
 
-  loadPixel(config.pixel_id);
+  // Acumula advanced matching desta chamada
+  if (opts.userData) {
+    const incoming = toAdvancedMatching(opts.userData);
+    for (const [k, v] of Object.entries(incoming)) {
+      currentAdvancedMatching[k] = v;
+    }
+  }
+  loadPixel(
+    config.pixel_id,
+    Object.keys(currentAdvancedMatching).length > 0 ? currentAdvancedMatching : undefined,
+  );
 
   const eventId = opts.eventId ?? newEventId();
   const customData = opts.customData ?? {};
@@ -194,6 +285,7 @@ export const trackViewContent = (params: {
       content_ids: [params.productId],
       content_name: params.name,
       content_category: params.category,
+      contents: [{ id: params.productId, quantity: 1, item_price: params.price }],
       value: params.price,
       currency: params.currency ?? 'BRL',
     },
@@ -259,3 +351,50 @@ export const trackPurchase = (params: {
 
 export const trackSearch = (searchString: string) =>
   track('Search', { customData: { search_string: searchString } });
+
+export const trackAddPaymentInfo = (params: {
+  contents: MetaContent[];
+  value: number;
+  currency?: string;
+  paymentType: string; // 'pix' | 'credit_card' | 'boleto'
+  userData?: MetaUserData;
+}) =>
+  track('AddPaymentInfo', {
+    userData: params.userData,
+    customData: {
+      content_type: 'product',
+      content_ids: params.contents.map((c) => c.id),
+      contents: params.contents,
+      value: params.value,
+      currency: params.currency ?? 'BRL',
+      num_items: params.contents.reduce((sum, c) => sum + (c.quantity ?? 1), 0),
+      payment_type: params.paymentType,
+    },
+  });
+
+export const trackLead = (params?: {
+  value?: number;
+  currency?: string;
+  contentName?: string; // ex: 'Newsletter WhatsApp'
+  userData?: MetaUserData;
+}) =>
+  track('Lead', {
+    userData: params?.userData,
+    customData: {
+      content_name: params?.contentName,
+      value: params?.value,
+      currency: params?.currency ?? 'BRL',
+    },
+  });
+
+export const trackCompleteRegistration = (params?: {
+  method?: string; // 'google' | 'email'
+  userData?: MetaUserData;
+}) =>
+  track('CompleteRegistration', {
+    userData: params?.userData,
+    customData: {
+      content_name: params?.method ? `signup_${params.method}` : 'signup',
+      currency: 'BRL',
+    },
+  });

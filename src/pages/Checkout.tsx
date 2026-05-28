@@ -20,6 +20,7 @@ import {
   Store,
   Loader2,
   Tag,
+  Trash2,
 } from "lucide-react";
 import { validateCoupon } from "@/services/coupons";
 import { motion, AnimatePresence } from "framer-motion";
@@ -31,11 +32,26 @@ import { calculateShippingViaWoo, ShippingMethod } from "@/services/shipping";
 import {
   trackInitiateCheckout,
   trackPurchase,
+  trackAddPaymentInfo,
+  setUserData as setMetaUserData,
   getMetaCookies,
 } from "@/services/metaPixel";
 import CreditCardPreview, { type CardFocus } from "@/components/CreditCardPreview";
 
 type PaymentMethod = "credit" | "pix" | "boleto";
+
+// UFs do Brasil (código usado pelo WooCommerce no campo billing_state).
+const BR_STATES: { uf: string; name: string }[] = [
+  { uf: "AC", name: "Acre" }, { uf: "AL", name: "Alagoas" }, { uf: "AP", name: "Amapá" },
+  { uf: "AM", name: "Amazonas" }, { uf: "BA", name: "Bahia" }, { uf: "CE", name: "Ceará" },
+  { uf: "DF", name: "Distrito Federal" }, { uf: "ES", name: "Espírito Santo" }, { uf: "GO", name: "Goiás" },
+  { uf: "MA", name: "Maranhão" }, { uf: "MT", name: "Mato Grosso" }, { uf: "MS", name: "Mato Grosso do Sul" },
+  { uf: "MG", name: "Minas Gerais" }, { uf: "PA", name: "Pará" }, { uf: "PB", name: "Paraíba" },
+  { uf: "PR", name: "Paraná" }, { uf: "PE", name: "Pernambuco" }, { uf: "PI", name: "Piauí" },
+  { uf: "RJ", name: "Rio de Janeiro" }, { uf: "RN", name: "Rio Grande do Norte" }, { uf: "RS", name: "Rio Grande do Sul" },
+  { uf: "RO", name: "Rondônia" }, { uf: "RR", name: "Roraima" }, { uf: "SC", name: "Santa Catarina" },
+  { uf: "SP", name: "São Paulo" }, { uf: "SE", name: "Sergipe" }, { uf: "TO", name: "Tocantins" },
+];
 
 // Códigos de recusa do MP que retornam quando o emissor (Visa/Master/banco)
 // rejeita a cobrança. Tradução referencial:
@@ -106,7 +122,7 @@ const MIN_AMOUNT = 2;
 const MIN_SUBTOTAL = 197.99;
 
 const Checkout = () => {
-  const { items, totalPrice, clearCart, coupon, setCoupon } = useCart();
+  const { items, totalPrice, clearCart, coupon, setCoupon, setGuestContact, removeItem, updateQuantity } = useCart();
   const navigate = useNavigate();
   const createOrder = useCreateOrder();
   const [step, setStep] = useState<"form" | "success">("form");
@@ -176,6 +192,45 @@ const Checkout = () => {
     postcode: "", address: "", number: "", complement: "",
     neighborhood: "", city: "", state: "",
   });
+
+  // Sincroniza identificadores do guest com o CartContext (para carrinho abandonado).
+  // Debounce de 800ms para esperar o usuário terminar de digitar.
+  useEffect(() => {
+    const t = setTimeout(() => {
+      const email = form.email.trim();
+      const phoneDigits = form.phone.replace(/\D/g, "");
+      const name = `${form.firstName} ${form.lastName}`.trim();
+      setGuestContact({
+        email: email || undefined,
+        phone: phoneDigits || undefined,
+        name: name || undefined,
+      });
+    }, 3000);
+    return () => clearTimeout(t);
+  }, [form.email, form.phone, form.firstName, form.lastName, setGuestContact]);
+
+  // Atualiza Advanced Matching do Meta Pixel conforme o usuário preenche o checkout.
+  // O pixel re-inicializa silenciosamente; eventos seguintes (AddPaymentInfo, Purchase)
+  // já saem com os dados de matching e elevam o EMQ.
+  useEffect(() => {
+    const t = setTimeout(() => {
+      void setMetaUserData({
+        email: form.email || undefined,
+        phone: form.phone || undefined,
+        first_name: form.firstName || undefined,
+        last_name: form.lastName || undefined,
+        city: form.city || undefined,
+        state: form.state || undefined,
+        zp: form.postcode || undefined,
+        country: "br",
+        external_id: form.cpf || undefined,
+      });
+    }, 800);
+    return () => clearTimeout(t);
+  }, [
+    form.email, form.phone, form.firstName, form.lastName,
+    form.city, form.state, form.postcode, form.cpf,
+  ]);
 
   // Pré-preenche dados do cliente logado ao montar o checkout.
   // Falhas silenciosas — usuário pode preencher manualmente.
@@ -251,6 +306,36 @@ const Checkout = () => {
   }, [total, installments, paymentMethod]);
 
   const initiateCheckoutFired = useRef(false);
+  const addPaymentInfoFired = useRef<Set<PaymentMethod>>(new Set());
+
+  // Dispara AddPaymentInfo (Meta Pixel + CAPI) ao selecionar PIX/cartão/boleto.
+  // Uma vez por método por sessão de checkout (evita spam se o usuário ficar
+  // alternando). Acompanha o setPaymentMethod nativo.
+  const handleSelectPaymentMethod = (pm: PaymentMethod) => {
+    setPaymentMethod(pm);
+    if (addPaymentInfoFired.current.has(pm) || items.length === 0) return;
+    addPaymentInfoFired.current.add(pm);
+    void trackAddPaymentInfo({
+      contents: items.map(({ product, quantity }) => ({
+        id: product.id,
+        quantity,
+        item_price: product.price,
+      })),
+      value: total,
+      paymentType: pm === "credit" ? "credit_card" : pm,
+      userData: {
+        email: form.email || undefined,
+        phone: form.phone || undefined,
+        first_name: form.firstName || undefined,
+        last_name: form.lastName || undefined,
+        city: form.city || undefined,
+        state: form.state || undefined,
+        zp: form.postcode || undefined,
+        country: "br",
+        external_id: form.cpf || undefined,
+      },
+    });
+  };
   useEffect(() => {
     if (initiateCheckoutFired.current || items.length === 0) return;
     initiateCheckoutFired.current = true;
@@ -261,6 +346,17 @@ const Checkout = () => {
         item_price: product.price,
       })),
       value: total,
+      userData: {
+        email: form.email || undefined,
+        phone: form.phone || undefined,
+        first_name: form.firstName || undefined,
+        last_name: form.lastName || undefined,
+        city: form.city || undefined,
+        state: form.state || undefined,
+        zp: form.postcode || undefined,
+        country: "br",
+        external_id: form.cpf || undefined,
+      },
     });
   }, [items, total]);
 
@@ -582,21 +678,8 @@ const Checkout = () => {
         cpf: form.cpf || undefined,
         fbp: fbCookies.fbp,
         fbc: fbCookies.fbc,
+        checkout_url: typeof window !== "undefined" ? window.location.href : undefined,
         card: cardPayload,
-      });
-
-      // Purchase com event_id estável → o backend dispara CAPI com o mesmo
-      // `order_<id>` no webhook de pagamento, e o Meta deduplica.
-      trackPurchase({
-        orderId: order.id,
-        contents: purchaseSnapshot.contents,
-        value: order.total ?? purchaseSnapshot.value,
-        userData: {
-          email: form.email,
-          phone: form.phone,
-          first_name: form.firstName,
-          last_name: form.lastName,
-        },
       });
 
       if (order.payment?.error) {
@@ -606,10 +689,36 @@ const Checkout = () => {
         return;
       }
 
+      // Purchase no browser: SÓ dispara para cartão aprovado (confirmação síncrona).
+      // Para PIX/boleto, o pagamento ainda não foi feito; quem dispara Purchase é
+      // o CAPI via webhook quando o pedido vira processing/completed (idempotente
+      // por _biju_meta_purchase_sent + event_id "order_<id>" garante dedup).
+      if (paymentMethod === "credit") {
+        trackPurchase({
+          orderId: order.id,
+          contents: purchaseSnapshot.contents,
+          value: order.total ?? purchaseSnapshot.value,
+          userData: {
+            email: form.email,
+            phone: form.phone,
+            first_name: form.firstName,
+            last_name: form.lastName,
+            city: form.city || undefined,
+            state: form.state || undefined,
+            zp: form.postcode || undefined,
+            country: "br",
+            external_id: form.cpf || undefined,
+          },
+        });
+      }
+
       setOrderId(order.id);
       setPaymentDetails(order.payment ?? null);
       setStep("success");
-      clearCart();
+      // Esvazia o carrinho local, mas mantém o registro de carrinho abandonado
+      // no servidor: ele só deve sumir quando o pagamento for confirmado
+      // (hook woocommerce_order_status_changed no backend).
+      clearCart({ keepAbandoned: true });
       requestAnimationFrame(() => {
         window.scrollTo({ top: 0, behavior: "auto" });
       });
@@ -893,7 +1002,18 @@ const Checkout = () => {
                     <div className="grid grid-cols-3 gap-3">
                       <Input placeholder="Bairro" value={form.neighborhood} onChange={set("neighborhood")} required />
                       <Input placeholder="Cidade" value={form.city} onChange={set("city")} required />
-                      <Input placeholder="UF" value={form.state} onChange={set("state")} required />
+                      <select
+                        value={form.state}
+                        onChange={(e) => setForm((prev) => ({ ...prev, state: e.target.value }))}
+                        required
+                        aria-label="Estado (UF)"
+                        className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        <option value="" disabled>UF</option>
+                        {BR_STATES.map((s) => (
+                          <option key={s.uf} value={s.uf}>{s.uf}</option>
+                        ))}
+                      </select>
                     </div>
                   </section>
 
@@ -974,7 +1094,7 @@ const Checkout = () => {
                         <button
                           key={pm.id}
                           type="button"
-                          onClick={() => setPaymentMethod(pm.id)}
+                          onClick={() => handleSelectPaymentMethod(pm.id)}
                           className={`flex items-center gap-4 p-4 rounded-lg border-2 text-left transition-all ${
                             paymentMethod === pm.id
                               ? "border-primary bg-primary/5"
@@ -1112,32 +1232,66 @@ const Checkout = () => {
                       Seu Pedido
                     </h2>
 
-                    <div className="space-y-3 max-h-60 overflow-y-auto pr-1">
-                      {items.map(({ product, quantity }) => (
-                        <div key={product.id} className="flex gap-3">
-                          <img
-                            src={product.images_thumb?.[0] ?? product.images[0]}
-                            alt={product.name}
-                            className="w-14 h-14 rounded-lg object-cover shrink-0"
-                            loading="lazy"
-                            decoding="async"
-                          />
-                          <div className="flex-1 min-w-0">
-                            <p className="text-xs font-medium text-foreground line-clamp-2 leading-tight">
-                              {product.name}
-                            </p>
-                            <p className="text-xs text-muted-foreground mt-0.5">
-                              Qtd: {quantity}
-                            </p>
+                    <div className="space-y-3 max-h-72 overflow-y-auto pr-1">
+                      {items.map(({ product, quantity, variationId, unitPrice }) => {
+                        const max =
+                          typeof product.stockQuantity === "number" && product.stockQuantity >= 0
+                            ? product.stockQuantity
+                            : Infinity;
+                        const lineUnit = unitPrice ?? product.price;
+                        return (
+                          <div key={`${product.id}-${variationId ?? 0}`} className="flex gap-3">
+                            <img
+                              src={product.images_thumb?.[0] ?? product.images[0]}
+                              alt={product.name}
+                              className="w-14 h-14 rounded-lg object-cover shrink-0"
+                              loading="lazy"
+                              decoding="async"
+                            />
+                            <div className="flex-1 min-w-0">
+                              <p className="text-xs font-medium text-foreground line-clamp-2 leading-tight">
+                                {product.name}
+                              </p>
+                              <div className="flex items-center gap-2 mt-1.5">
+                                <div className="flex items-center border rounded-md overflow-hidden h-7">
+                                  <button
+                                    type="button"
+                                    onClick={() => updateQuantity(product.id, quantity - 1, variationId)}
+                                    className="px-1.5 h-full text-sm hover:bg-muted transition-colors"
+                                    aria-label="Diminuir quantidade"
+                                  >
+                                    −
+                                  </button>
+                                  <span className="px-2 text-xs font-bold min-w-[1.5rem] text-center">
+                                    {quantity}
+                                  </span>
+                                  <button
+                                    type="button"
+                                    onClick={() => updateQuantity(product.id, quantity + 1, variationId)}
+                                    disabled={quantity >= max}
+                                    className="px-1.5 h-full text-sm hover:bg-muted disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                                    aria-label="Aumentar quantidade"
+                                  >
+                                    +
+                                  </button>
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={() => removeItem(product.id, variationId)}
+                                  className="text-muted-foreground hover:text-destructive transition-colors"
+                                  aria-label="Remover item"
+                                >
+                                  <Trash2 className="h-3.5 w-3.5" />
+                                </button>
+                              </div>
+                            </div>
+                            <span className="text-xs font-bold text-foreground whitespace-nowrap self-start">
+                              R${" "}
+                              {(lineUnit * quantity).toFixed(2).replace(".", ",")}
+                            </span>
                           </div>
-                          <span className="text-xs font-bold text-foreground whitespace-nowrap self-start">
-                            R${" "}
-                            {(product.price * quantity)
-                              .toFixed(2)
-                              .replace(".", ",")}
-                          </span>
-                        </div>
-                      ))}
+                        );
+                      })}
                     </div>
 
                     <div className="border-t pt-3 space-y-3 text-sm">

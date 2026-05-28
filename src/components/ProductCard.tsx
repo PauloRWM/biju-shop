@@ -193,7 +193,13 @@ const ProductCard = ({ product, index = 0 }: Props) => {
                 type="button"
                 onClick={incQty}
                 aria-label="Aumentar quantidade"
-                className="h-full w-7 md:w-8 flex items-center justify-center text-foreground/70 hover:text-foreground hover:bg-muted transition-colors"
+                disabled={
+                  !isVariable &&
+                  typeof product.stockQuantity === "number" &&
+                  product.stockQuantity >= 0 &&
+                  cartQty >= product.stockQuantity
+                }
+                className="h-full w-7 md:w-8 flex items-center justify-center text-foreground/70 hover:text-foreground hover:bg-muted disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
               >
                 <Plus className="h-3.5 w-3.5" />
               </button>

@@ -126,6 +126,23 @@ class Biju_Meta_Pixel {
         return hash( 'sha256', $value );
     }
 
+    /**
+     * Normaliza telefone BR para E.164 sem o "+" (formato exigido pelo Meta):
+     *   "(11) 99999-8888" → "5511999998888"
+     * Se o número já vier com 55 no início (12-13 dígitos), mantém.
+     * Para 10 ou 11 dígitos (BR), prepende 55. Outros tamanhos: retorna como veio.
+     */
+    public static function normalize_phone_br( ?string $phone ): ?string {
+        if ( ! $phone ) return null;
+        $digits = preg_replace( '/\D/', '', $phone );
+        if ( $digits === '' ) return null;
+        $len = strlen( $digits );
+        if ( ( $len === 10 || $len === 11 ) && substr( $digits, 0, 2 ) !== '55' ) {
+            return '55' . $digits;
+        }
+        return $digits;
+    }
+
     public static function client_ip(): ?string {
         $candidates = [
             'HTTP_CF_CONNECTING_IP',
@@ -206,7 +223,7 @@ class Biju_Meta_Pixel {
         $cpf = $order->get_meta( '_billing_cpf' ) ?: $order->get_meta( '_cpf' ) ?: '';
         $cpf = preg_replace( '/\D/', '', $cpf );
 
-        $phone = preg_replace( '/\D/', '', $order->get_billing_phone() );
+        $phone = self::normalize_phone_br( $order->get_billing_phone() );
 
         // user_data hashado conforme exige o Meta
         $user_data = array_filter( [
@@ -234,7 +251,8 @@ class Biju_Meta_Pixel {
             'event_time'      => time(),
             'event_id'        => $event_id,
             'action_source'   => 'website',
-            'event_source_url'=> get_option( 'biju_frontend_url', home_url() ),
+            'event_source_url'=> $order->get_meta( '_biju_checkout_url' )
+                ?: get_option( 'biju_frontend_url', home_url() ),
             'user_data'       => $user_data,
             'custom_data'     => [
                 'currency'     => $order->get_currency(),
@@ -258,7 +276,10 @@ class Biju_Meta_Pixel {
      * InitiateCheckout, Search, Lead.
      */
     public static function track_browser_event( array $payload ): array {
-        $allowed = [ 'PageView', 'ViewContent', 'AddToCart', 'InitiateCheckout', 'Search', 'Lead', 'CompleteRegistration' ];
+        $allowed = [
+            'PageView', 'ViewContent', 'AddToCart', 'InitiateCheckout',
+            'AddPaymentInfo', 'Search', 'Lead', 'CompleteRegistration',
+        ];
         $name = $payload['event_name'] ?? '';
         if ( ! in_array( $name, $allowed, true ) ) {
             return [ 'success' => false, 'error' => 'invalid_event_name' ];
@@ -270,14 +291,22 @@ class Biju_Meta_Pixel {
         $custom = is_array( $payload['custom_data'] ?? null ) ? $payload['custom_data'] : [];
         $user   = is_array( $payload['user_data'] ?? null )   ? $payload['user_data']   : [];
 
-        // Normaliza/hashifica campos de user_data se vierem em texto puro
+        // Normaliza/hashifica campos de user_data. Telefone BR vira E.164 sem +.
         $email = $user['email'] ?? null;
-        $phone = $user['phone'] ?? null;
+        $phone = self::normalize_phone_br( $user['phone'] ?? null );
+        $cpf   = preg_replace( '/\D/', '', (string) ( $user['external_id'] ?? $user['cpf'] ?? '' ) );
+        $zp    = preg_replace( '/\D/', '', (string) ( $user['zp'] ?? $user['postcode'] ?? '' ) );
+
         $hashed = array_filter( [
             'em'         => $email ? self::hash( $email ) : null,
-            'ph'         => $phone ? self::hash_raw( preg_replace( '/\D/', '', $phone ) ) : null,
+            'ph'         => $phone ? self::hash_raw( $phone ) : null,
             'fn'         => isset( $user['first_name'] ) ? self::hash( $user['first_name'] ) : null,
             'ln'         => isset( $user['last_name'] )  ? self::hash( $user['last_name'] )  : null,
+            'ct'         => isset( $user['city'] )    ? self::hash( $user['city'] )    : null,
+            'st'         => isset( $user['state'] )   ? self::hash( $user['state'] )   : null,
+            'zp'         => $zp ? self::hash_raw( $zp ) : null,
+            'country'    => isset( $user['country'] ) ? self::hash( strtolower( $user['country'] ) ) : null,
+            'external_id'=> $cpf ? self::hash_raw( $cpf ) : null,
             'fbp'        => $user['fbp'] ?? self::fb_cookies()['fbp'],
             'fbc'        => $user['fbc'] ?? self::fb_cookies()['fbc'],
             'client_ip_address' => self::client_ip(),

@@ -214,6 +214,10 @@ class Biju_Orders {
         if ( ! empty( $body['fbc'] ) ) {
             $order->update_meta_data( '_biju_fbc', sanitize_text_field( $body['fbc'] ) );
         }
+        // URL real do checkout para event_source_url no Purchase CAPI
+        if ( ! empty( $body['checkout_url'] ) ) {
+            $order->update_meta_data( '_biju_checkout_url', esc_url_raw( $body['checkout_url'] ) );
+        }
 
         // CPF ou CNPJ (meta para nota fiscal e etiqueta de envio).
         // CPF = 11 dígitos, CNPJ = 14. Salvamos em ambos os metas comuns

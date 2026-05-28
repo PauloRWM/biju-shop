@@ -191,6 +191,22 @@ class Biju_REST_API {
         ] );
 
         // ---------------------------------------------------------------
+        // Carrinho abandonado (espelha a tabela do plugin original a partir do React)
+        // ---------------------------------------------------------------
+        register_rest_route( $ns, '/cart/save', [
+            [
+                'methods'             => WP_REST_Server::CREATABLE,
+                'callback'            => [ 'Biju_Abandoned_Cart', 'save' ],
+                'permission_callback' => '__return_true', // guest também envia (com email/phone)
+            ],
+            [
+                'methods'             => WP_REST_Server::DELETABLE,
+                'callback'            => [ 'Biju_Abandoned_Cart', 'delete' ],
+                'permission_callback' => '__return_true',
+            ],
+        ] );
+
+        // ---------------------------------------------------------------
         // Carrinho (sincronização para rastreamento de abandono)
         // ---------------------------------------------------------------
         register_rest_route( $ns, '/cart', [
@@ -351,8 +367,10 @@ class Biju_REST_API {
         $full_name  = sanitize_text_field( $data['name'] ?? trim( $given_name . ' ' . $family ) );
 
         // Encontra ou cria o usuário
+        $created = false;
         $user = get_user_by( 'email', $email );
         if ( ! $user ) {
+            $created = true;
             $password = wp_generate_password( 32, true, true );
             $user_id  = wc_create_new_customer( $email, $email, $password, [
                 'first_name' => $given_name,
@@ -374,8 +392,9 @@ class Biju_REST_API {
         }
 
         return new WP_REST_Response( [
-            'token' => Biju_Auth::generate_token( $user->ID ),
-            'user'  => self::format_user( $user ),
+            'token'   => Biju_Auth::generate_token( $user->ID ),
+            'user'    => self::format_user( $user ),
+            'created' => $created,
         ], 200 );
     }
 

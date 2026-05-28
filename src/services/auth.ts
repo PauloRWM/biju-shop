@@ -11,6 +11,7 @@ export interface AuthUser {
 export interface AuthResponse {
   token: string;
   user: AuthUser;
+  created?: boolean; // true se a conta foi criada agora (ex: 1º login Google)
 }
 
 export async function login(username: string, password: string): Promise<AuthResponse> {

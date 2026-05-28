@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useToast } from "@/hooks/use-toast";
 import { api, ApiError } from "@/services/api";
+import { trackLead } from "@/services/metaPixel";
 
 const NewsletterForm = () => {
   const [whatsapp, setWhatsapp] = useState("");
@@ -44,6 +45,12 @@ const NewsletterForm = () => {
 
     try {
       await api.post("/newsletter", { whatsapp: numbers });
+
+      // Lead (Meta Pixel + CAPI) — telefone como Advanced Matching.
+      void trackLead({
+        contentName: "Newsletter WhatsApp",
+        userData: { phone: numbers, country: "br" },
+      });
 
       toast({
         title: "✅ Cadastro realizado!",
