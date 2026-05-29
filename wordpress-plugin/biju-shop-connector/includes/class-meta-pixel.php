@@ -127,6 +127,19 @@ class Biju_Meta_Pixel {
     }
 
     /**
+     * Hash de cidade/estado conforme regra do Meta: lowercase, sem espaços,
+     * sem pontuação, sem acentos. "São Paulo" → "saopaulo".
+     */
+    public static function hash_locality( ?string $value ): ?string {
+        if ( ! $value ) return null;
+        $v = remove_accents( $value );
+        $v = strtolower( $v );
+        $v = preg_replace( '/[^a-z0-9]/', '', $v );
+        if ( $v === '' ) return null;
+        return hash( 'sha256', $v );
+    }
+
+    /**
      * Normaliza telefone BR para E.164 sem o "+" (formato exigido pelo Meta):
      *   "(11) 99999-8888" → "5511999998888"
      * Se o número já vier com 55 no início (12-13 dígitos), mantém.
@@ -231,10 +244,10 @@ class Biju_Meta_Pixel {
             'ph'         => $phone ? self::hash_raw( $phone ) : null,
             'fn'         => self::hash( $order->get_billing_first_name() ),
             'ln'         => self::hash( $order->get_billing_last_name() ),
-            'ct'         => self::hash( $order->get_billing_city() ),
-            'st'         => self::hash( $order->get_billing_state() ),
-            'zp'         => self::hash( preg_replace( '/\D/', '', $order->get_billing_postcode() ) ),
-            'country'    => self::hash( strtolower( $order->get_billing_country() ?: 'br' ) ),
+            'ct'         => self::hash_locality( $order->get_billing_city() ),
+            'st'         => self::hash_locality( $order->get_billing_state() ),
+            'zp'         => self::hash_raw( preg_replace( '/\D/', '', $order->get_billing_postcode() ) ),
+            'country'    => self::hash_locality( $order->get_billing_country() ?: 'br' ),
             'external_id'=> $cpf ? self::hash_raw( $cpf ) : null,
             'client_ip_address' => self::client_ip(),
             'client_user_agent' => self::client_user_agent(),
@@ -302,10 +315,10 @@ class Biju_Meta_Pixel {
             'ph'         => $phone ? self::hash_raw( $phone ) : null,
             'fn'         => isset( $user['first_name'] ) ? self::hash( $user['first_name'] ) : null,
             'ln'         => isset( $user['last_name'] )  ? self::hash( $user['last_name'] )  : null,
-            'ct'         => isset( $user['city'] )    ? self::hash( $user['city'] )    : null,
-            'st'         => isset( $user['state'] )   ? self::hash( $user['state'] )   : null,
+            'ct'         => isset( $user['city'] )    ? self::hash_locality( $user['city'] )  : null,
+            'st'         => isset( $user['state'] )   ? self::hash_locality( $user['state'] ) : null,
             'zp'         => $zp ? self::hash_raw( $zp ) : null,
-            'country'    => isset( $user['country'] ) ? self::hash( strtolower( $user['country'] ) ) : null,
+            'country'    => isset( $user['country'] ) ? self::hash_locality( $user['country'] ) : null,
             'external_id'=> $cpf ? self::hash_raw( $cpf ) : null,
             'fbp'        => $user['fbp'] ?? self::fb_cookies()['fbp'],
             'fbc'        => $user['fbc'] ?? self::fb_cookies()['fbc'],

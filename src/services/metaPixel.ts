@@ -200,12 +200,16 @@ const toAdvancedMatching = (u?: MetaUserData): Record<string, string> => {
       out.ph = digits;
     }
   }
-  if (u.first_name) out.fn = u.first_name.trim().toLowerCase();
-  if (u.last_name)  out.ln = u.last_name.trim().toLowerCase();
-  if (u.city)       out.ct = u.city.trim().toLowerCase().replace(/\s+/g, '');
-  if (u.state)      out.st = u.state.trim().toLowerCase();
+  // Remove acentos para bater com a normalização do servidor (PHP remove_accents).
+  // U+0300..U+036F = combining diacritical marks (após NFD).
+  const stripAccents = (s: string) =>
+    s.normalize('NFD').replace(/[̀-ͯ]/g, '');
+  if (u.first_name) out.fn = stripAccents(u.first_name.trim().toLowerCase());
+  if (u.last_name)  out.ln = stripAccents(u.last_name.trim().toLowerCase());
+  if (u.city)       out.ct = stripAccents(u.city.toLowerCase()).replace(/[^a-z0-9]/g, '');
+  if (u.state)      out.st = stripAccents(u.state.toLowerCase()).replace(/[^a-z0-9]/g, '');
   if (u.zp)         out.zp = u.zp.replace(/\D/g, '');
-  if (u.country)    out.country = u.country.trim().toLowerCase();
+  if (u.country)    out.country = stripAccents(u.country.trim().toLowerCase()).replace(/[^a-z0-9]/g, '');
   if (u.external_id) out.external_id = u.external_id.replace(/\D/g, '');
   return out;
 };

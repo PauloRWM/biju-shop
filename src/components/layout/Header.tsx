@@ -1,11 +1,13 @@
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
-import { User, Search, Loader2 } from "lucide-react";
+import { User, Search, Loader2, Package, LogOut } from "lucide-react";
 import { useState, useEffect, useRef, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import CartDrawer from "@/components/CartDrawer";
 import { fetchProducts } from "@/services/products";
 import type { Product } from "@/data/products";
 import { trackSearch } from "@/services/metaPixel";
+import { getAuthToken } from "@/services/api";
+import { fetchAccount, logout as authLogout } from "@/services/auth";
 
 function useDebounce(value: string, delay = 300) {
   const [debounced, setDebounced] = useState(value);
@@ -28,6 +30,36 @@ const Header = () => {
   const accountRef = useRef<HTMLDivElement>(null);
   const searchRef = useRef<HTMLDivElement>(null);
   const mobileSearchRef = useRef<HTMLInputElement>(null);
+
+  // Estado de login: nome (primeiro nome) ou null se guest.
+  const [userFirstName, setUserFirstName] = useState<string | null>(null);
+  const isLoggedIn = userFirstName !== null;
+  useEffect(() => {
+    if (!getAuthToken()) {
+      setUserFirstName(null);
+      return;
+    }
+    let cancelled = false;
+    fetchAccount()
+      .then((acc) => {
+        if (cancelled) return;
+        const first = acc.user.firstName?.trim() || acc.user.name?.trim().split(" ")[0] || "";
+        setUserFirstName(first || acc.user.email?.split("@")[0] || "Conta");
+      })
+      .catch(() => {
+        if (!cancelled) setUserFirstName(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const handleLogout = () => {
+    authLogout();
+    setUserFirstName(null);
+    setAccountOpen(false);
+    navigate("/");
+  };
 
   // Ajax search state
   const [suggestions, setSuggestions] = useState<Product[]>([]);
@@ -246,11 +278,11 @@ const Header = () => {
                 <button
                   onClick={() => setAccountOpen((v) => !v)}
                   className="flex items-center gap-1.5 px-2 py-1.5 rounded-lg text-foreground/70 hover:text-foreground hover:bg-muted/50 transition-all"
-                  aria-label="Minha Conta"
+                  aria-label={isLoggedIn ? `Olá, ${userFirstName}` : "Entrar"}
                 >
                   <User className="h-5 w-5" />
-                  <span className="text-[11px] font-sans font-medium uppercase tracking-[0.08em] hidden lg:block">
-                    Entrar
+                  <span className="text-[11px] font-sans font-medium uppercase tracking-[0.08em] hidden lg:block max-w-[120px] truncate">
+                    {isLoggedIn ? `Olá, ${userFirstName}` : "Entrar"}
                   </span>
                 </button>
                 <AnimatePresence>
@@ -262,30 +294,44 @@ const Header = () => {
                       transition={{ duration: 0.15 }}
                       className="absolute top-full right-0 mt-2 bg-background border border-border/40 shadow-xl rounded-xl py-2 z-50 min-w-[180px]"
                     >
-                      <Link
-                        to="/conta"
-                        onClick={() => setAccountOpen(false)}
-                        className="flex items-center gap-3 px-4 py-2.5 text-sm font-sans text-foreground/80 hover:text-foreground hover:bg-muted/50 transition-colors"
-                      >
-                        <User className="h-4 w-4" />
-                        Minha Conta
-                      </Link>
-                      <Link
-                        to="/conta"
-                        onClick={() => setAccountOpen(false)}
-                        className="flex items-center gap-3 px-4 py-2.5 text-sm font-sans text-foreground/80 hover:text-foreground hover:bg-muted/50 transition-colors"
-                      >
-                        <Package className="h-4 w-4" />
-                        Meus Pedidos
-                      </Link>
-                      <div className="border-t border-border/30 my-1.5" />
-                      <Link
-                        to="/conta"
-                        onClick={() => setAccountOpen(false)}
-                        className="flex items-center gap-3 px-4 py-2.5 text-sm font-sans font-medium text-foreground hover:bg-muted/50 transition-colors"
-                      >
-                        Entrar / Cadastrar
-                      </Link>
+                      {isLoggedIn ? (
+                        <>
+                          <Link
+                            to="/conta"
+                            onClick={() => setAccountOpen(false)}
+                            className="flex items-center gap-3 px-4 py-2.5 text-sm font-sans text-foreground/80 hover:text-foreground hover:bg-muted/50 transition-colors"
+                          >
+                            <User className="h-4 w-4" />
+                            Minha Conta
+                          </Link>
+                          <Link
+                            to="/conta"
+                            onClick={() => setAccountOpen(false)}
+                            className="flex items-center gap-3 px-4 py-2.5 text-sm font-sans text-foreground/80 hover:text-foreground hover:bg-muted/50 transition-colors"
+                          >
+                            <Package className="h-4 w-4" />
+                            Meus Pedidos
+                          </Link>
+                          <div className="border-t border-border/30 my-1.5" />
+                          <button
+                            type="button"
+                            onClick={handleLogout}
+                            className="flex items-center gap-3 px-4 py-2.5 text-sm font-sans font-medium text-foreground hover:bg-muted/50 transition-colors w-full text-left"
+                          >
+                            <LogOut className="h-4 w-4" />
+                            Sair
+                          </button>
+                        </>
+                      ) : (
+                        <Link
+                          to="/conta"
+                          onClick={() => setAccountOpen(false)}
+                          className="flex items-center gap-3 px-4 py-2.5 text-sm font-sans font-medium text-foreground hover:bg-muted/50 transition-colors"
+                        >
+                          <User className="h-4 w-4" />
+                          Entrar / Cadastrar
+                        </Link>
+                      )}
                     </motion.div>
                   )}
                 </AnimatePresence>

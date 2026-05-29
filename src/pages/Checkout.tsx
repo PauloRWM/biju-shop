@@ -308,11 +308,9 @@ const Checkout = () => {
   const initiateCheckoutFired = useRef(false);
   const addPaymentInfoFired = useRef<Set<PaymentMethod>>(new Set());
 
-  // Dispara AddPaymentInfo (Meta Pixel + CAPI) ao selecionar PIX/cartão/boleto.
-  // Uma vez por método por sessão de checkout (evita spam se o usuário ficar
-  // alternando). Acompanha o setPaymentMethod nativo.
-  const handleSelectPaymentMethod = (pm: PaymentMethod) => {
-    setPaymentMethod(pm);
+  // Dispara AddPaymentInfo (Meta Pixel + CAPI). Idempotente por método —
+  // se já disparou para esse pm nesta sessão de checkout, não repete.
+  const fireAddPaymentInfo = (pm: PaymentMethod) => {
     if (addPaymentInfoFired.current.has(pm) || items.length === 0) return;
     addPaymentInfoFired.current.add(pm);
     void trackAddPaymentInfo({
@@ -335,6 +333,12 @@ const Checkout = () => {
         external_id: form.cpf || undefined,
       },
     });
+  };
+
+  // onClick dos botões de método de pagamento.
+  const handleSelectPaymentMethod = (pm: PaymentMethod) => {
+    setPaymentMethod(pm);
+    fireAddPaymentInfo(pm);
   };
   useEffect(() => {
     if (initiateCheckoutFired.current || items.length === 0) return;
@@ -643,6 +647,10 @@ const Checkout = () => {
         })),
         value: total,
       };
+
+      // Garante AddPaymentInfo para o método atual (caso o usuário não tenha
+      // clicado em outro método antes — PIX é o padrão e fica pré-selecionado).
+      fireAddPaymentInfo(paymentMethod);
 
       const order = await createOrder.mutateAsync({
         billing: {
