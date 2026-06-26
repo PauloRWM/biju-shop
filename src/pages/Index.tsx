@@ -1,9 +1,10 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import Layout from "@/components/layout/Layout";
 import ProductCard from "@/components/ProductCard";
 import LoadingSpinner from "@/components/LoadingSpinner";
 import NewsletterForm from "@/components/NewsletterForm";
+import CategorySidebar from "@/components/CategorySidebar";
 import { useProducts, useHomepageConfig, useCategories } from "@/hooks/useProducts";
 import { products as fallbackProducts, categories as fallbackCategories } from "@/data/products";
 import { ArrowRight, Truck, ChevronLeft, ChevronRight, Sparkles, Star, ShoppingCart, CreditCard as CreditCard2, Loader2 } from "lucide-react";
@@ -80,6 +81,12 @@ const Index = () => {
   const sections = catArray.length > 0
     ? catArray.filter(cat => cat.count > 0 && cat.slug !== 'todos-produtos' && cat.slug !== 'uncategorized')
     : (homepageConfig?.sections?.length ? homepageConfig.sections : fallbackCategoryCards);
+
+  // Lista da sidebar de categorias (mesmo aside do /shop). "Todos" leva ao /shop
+  // sem filtro; cada categoria leva a /shop?cat=<nome>.
+  const sidebarCats = catArray.length > 0
+    ? [{ name: "Todos", slug: "todos", count: 0 }, ...catArray]
+    : fallbackCategories.map(c => ({ name: c, slug: c.toLowerCase(), count: 0 }));
 
   const scrollPrev = () => emblaApi && emblaApi.scrollPrev();
   const scrollNext = () => emblaApi && emblaApi.scrollNext();
@@ -201,13 +208,33 @@ const Index = () => {
         </div>
       </section>
 
-      {/* ─── Shop by Category ─── */}
-      <CategoriesCarousel sections={sections} />
+      {/* ─── Compre por Categoria (círculos, largura cheia) ─── */}
+      <section className="py-14">
+        <div className="container mx-auto px-4">
+          <CategoriesCarousel sections={sections} />
+        </div>
+      </section>
 
-      {/* ─── Seções de Produtos por Categoria ─── */}
-      {(homepageConfig?.sections ?? fallbackCategoryCards).map((section, idx) => (
-        <CategorySection key={section.slug || section.name} section={section} index={idx} />
-      ))}
+      {/* ─── Categorias (aside, igual /shop) + Seções de Produtos ─── */}
+      <section className="pb-16">
+        <div className="container mx-auto px-4">
+          <div className="lg:flex lg:gap-8">
+            {/* Sidebar de categorias — mesmo aside do /shop (desktop) */}
+            <aside className="hidden lg:block w-[220px] shrink-0">
+              <div className="sticky top-[120px]">
+                <CategorySidebar categories={sidebarCats} />
+              </div>
+            </aside>
+
+            {/* Seções de produtos por categoria, ao lado do aside */}
+            <div className="flex-1 min-w-0 space-y-10 md:space-y-14">
+              {(homepageConfig?.sections ?? fallbackCategoryCards).map((section, idx) => (
+                <CategorySection key={section.slug || section.name} section={section} index={idx} />
+              ))}
+            </div>
+          </div>
+        </div>
+      </section>
 
       {/* ─── Testimonials ─── */}
       <section className="border-t border-border/50">
@@ -269,40 +296,38 @@ const CategoriesCarousel = ({ sections }: { sections: { name: string; slug?: str
   }, [Autoplay({ delay: 3000, stopOnInteraction: true })]);
 
   return (
-    <section className="py-14">
-      <div className="container mx-auto px-4">
-        <div className="text-center mb-8">
-          <p className="text-[11px] font-sans uppercase tracking-[0.2em] text-muted-foreground mb-2">Explore</p>
-          <h2 className="font-display text-2xl md:text-3xl font-light tracking-wide text-foreground">Compre por Categoria</h2>
-        </div>
-
-        <div className="relative">
-          <div className="overflow-hidden" ref={catRef}>
-            <div className="flex gap-6">
-              {sections.map((cat) => (
-                <CategoryCircle key={cat.slug || cat.name} cat={cat} />
-              ))}
-            </div>
-          </div>
-
-          {/* Setas */}
-          <button
-            onClick={() => catApi?.scrollPrev()}
-            className="absolute -left-2 top-[50px] md:top-[60px] -translate-y-1/2 w-9 h-9 rounded-full bg-background border border-border/50 shadow-md flex items-center justify-center text-foreground/50 hover:text-foreground hover:border-foreground/30 transition-all z-10 hidden md:flex"
-            aria-label="Anterior"
-          >
-            <ChevronLeft className="h-4 w-4" />
-          </button>
-          <button
-            onClick={() => catApi?.scrollNext()}
-            className="absolute -right-2 top-[50px] md:top-[60px] -translate-y-1/2 w-9 h-9 rounded-full bg-background border border-border/50 shadow-md flex items-center justify-center text-foreground/50 hover:text-foreground hover:border-foreground/30 transition-all z-10 hidden md:flex"
-            aria-label="Proximo"
-          >
-            <ChevronRight className="h-4 w-4" />
-          </button>
-        </div>
+    <>
+      <div className="text-center mb-8">
+        <p className="text-[11px] font-sans uppercase tracking-[0.2em] text-muted-foreground mb-2">Explore</p>
+        <h2 className="font-display text-2xl md:text-3xl font-light tracking-wide text-foreground">Compre por Categoria</h2>
       </div>
-    </section>
+
+      <div className="relative">
+        <div className="overflow-hidden" ref={catRef}>
+          <div className="flex gap-6">
+            {sections.map((cat) => (
+              <CategoryCircle key={cat.slug || cat.name} cat={cat} />
+            ))}
+          </div>
+        </div>
+
+        {/* Setas */}
+        <button
+          onClick={() => catApi?.scrollPrev()}
+          className="absolute -left-2 top-[50px] md:top-[60px] -translate-y-1/2 w-9 h-9 rounded-full bg-background border border-border/50 shadow-md flex items-center justify-center text-foreground/50 hover:text-foreground hover:border-foreground/30 transition-all z-10 hidden md:flex"
+          aria-label="Anterior"
+        >
+          <ChevronLeft className="h-4 w-4" />
+        </button>
+        <button
+          onClick={() => catApi?.scrollNext()}
+          className="absolute -right-2 top-[50px] md:top-[60px] -translate-y-1/2 w-9 h-9 rounded-full bg-background border border-border/50 shadow-md flex items-center justify-center text-foreground/50 hover:text-foreground hover:border-foreground/30 transition-all z-10 hidden md:flex"
+          aria-label="Proximo"
+        >
+          <ChevronRight className="h-4 w-4" />
+        </button>
+      </div>
+    </>
   );
 };
 
@@ -352,12 +377,45 @@ const CategoryCircle = ({ cat }: { cat: { name: string; slug?: string; count: nu
   );
 };
 
-// Componente para cada seção de categoria — carrossel 2 linhas com drag
+// Componente para cada seção de categoria — carrossel 2 linhas com drag.
+//
+// LAZY POR VIEWPORT: a home renderiza uma seção por categoria, cada uma com 12
+// produtos/imagens. Buscar e montar TODAS no load inicial inflava o payload
+// (principal causa do Speed Index alto no mobile). Agora cada seção só dispara
+// a busca de produtos quando entra (ou está perto de entrar) na viewport, via
+// IntersectionObserver. As primeiras seções (index < 1) carregam de imediato
+// para não atrasar o conteúdo acima da dobra.
 const CategorySection = ({ section, index }: { section: typeof fallbackCategoryCards[0]; index: number }) => {
-  const { data: productsPage, isLoading } = useProducts({
-    category: section.slug || section.name,
-    per_page: 12,
-  });
+  const containerRef = useRef<HTMLElement | null>(null);
+  // Primeira seção carrega na hora; as demais esperam chegar perto da viewport.
+  const [inView, setInView] = useState(index < 1);
+
+  useEffect(() => {
+    if (inView) return;
+    const el = containerRef.current;
+    if (!el || typeof IntersectionObserver === "undefined") {
+      setInView(true); // sem suporte: carrega tudo (degradação segura)
+      return;
+    }
+    const obs = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((e) => e.isIntersecting)) {
+          setInView(true);
+          obs.disconnect();
+        }
+      },
+      // rootMargin: começa a carregar 400px ANTES de a seção aparecer, para o
+      // conteúdo já estar pronto quando o usuário chega nela.
+      { rootMargin: "400px 0px" },
+    );
+    obs.observe(el);
+    return () => obs.disconnect();
+  }, [inView]);
+
+  const { data: productsPage, isLoading } = useProducts(
+    { category: section.slug || section.name, per_page: 12 },
+    { enabled: inView },
+  );
 
   const [catEmblaRef, catEmblaApi] = useEmblaCarousel({
     loop: false,
@@ -368,14 +426,12 @@ const CategorySection = ({ section, index }: { section: typeof fallbackCategoryC
 
   const products = productsPage?.products ?? [];
 
-  if (!isLoading && products.length === 0) return null;
-
-  const bgClass = index % 2 === 0 ? "bg-muted/20" : "bg-background";
+  // Já buscou e veio vazio: não renderiza a seção.
+  if (inView && !isLoading && products.length === 0) return null;
 
   return (
-    <section className={bgClass}>
-      <div className="container mx-auto max-w-7xl px-4 py-12">
-        {/* Header */}
+    <section ref={containerRef}>
+      {/* Header */}
         <div className="flex items-center justify-between mb-6">
           <div>
             <h2 className="font-display text-xl md:text-2xl font-light tracking-wide text-foreground">
@@ -411,9 +467,13 @@ const CategorySection = ({ section, index }: { section: typeof fallbackCategoryC
           </div>
         </div>
 
-        {/* Carrossel 1 linha */}
-        {isLoading ? (
-          <LoadingSpinner />
+        {/* Carrossel 1 linha. Enquanto a seção não entrou na viewport (!inView)
+            ou está buscando, reserva altura aproximada de um card para não causar
+            salto de layout (CLS) quando os produtos chegarem. */}
+        {!inView || isLoading ? (
+          <div className="min-h-[360px] flex items-center justify-center">
+            <LoadingSpinner />
+          </div>
         ) : (
           <div className="overflow-hidden" ref={catEmblaRef}>
             <div className="flex gap-3 md:gap-4">
@@ -428,7 +488,6 @@ const CategorySection = ({ section, index }: { section: typeof fallbackCategoryC
             </div>
           </div>
         )}
-      </div>
     </section>
   );
 };

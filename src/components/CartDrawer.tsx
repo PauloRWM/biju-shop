@@ -74,7 +74,7 @@ const CartDrawer = () => {
                           {item.product.name}
                         </h4>
                         <p className="text-base font-bold text-foreground">
-                          R$ {(item.product.price * item.quantity).toFixed(2).replace(".", ",")}
+                          R$ {((item.unitPrice ?? item.product.price) * item.quantity).toFixed(2).replace(".", ",")}
                         </p>
                       </div>
 

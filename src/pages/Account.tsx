@@ -26,10 +26,11 @@ import {
 } from "lucide-react";
 import { register, login, logout as authLogout, fetchAccount, forgotPassword } from "@/services/auth";
 import { fetchMyOrders, Order } from "@/services/orders";
-import { ApiError } from "@/services/api";
+import { ApiError, getAuthToken } from "@/services/api";
 import { toast } from "sonner";
 import { useNavigate, useLocation } from "react-router-dom";
 import GoogleLoginButton from "@/components/GoogleLoginButton";
+import PayOrderDialog from "@/components/PayOrderDialog";
 import { trackCompleteRegistration } from "@/services/metaPixel";
 
 const Account = () => {
@@ -37,13 +38,17 @@ const Account = () => {
   const location = useLocation();
   const locationState = location.state as { email?: string; signUp?: boolean } | null;
 
-  const [isLoggedIn, setIsLoggedIn] = useState(false);
+  // Assume logado se há token (evita flash do formulário de login enquanto
+  // /account responde — pode levar 1-6s no servidor frio). Se o token for
+  // inválido, o useEffect abaixo desloga.
+  const [isLoggedIn, setIsLoggedIn] = useState<boolean>(() => !!getAuthToken());
   const [isSignUp, setIsSignUp] = useState(locationState?.signUp ?? false);
   const [isForgotPassword, setIsForgotPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [orders, setOrders] = useState<Order[]>([]);
   const [loadingOrders, setLoadingOrders] = useState(false);
   const [expandedOrderId, setExpandedOrderId] = useState<number | null>(null);
+  const [payOrderTarget, setPayOrderTarget] = useState<Order | null>(null);
   const [userData, setUserData] = useState({
     name: "",
     email: "",
@@ -739,11 +744,7 @@ const Account = () => {
                               <Button
                                 size="sm"
                                 className="gap-2"
-                                onClick={() =>
-                                  toast.info(
-                                    "Entre em contato pelo WhatsApp para concluir o pagamento.",
-                                  )
-                                }
+                                onClick={() => setPayOrderTarget(order)}
                               >
                                 <CreditCard className="h-3.5 w-3.5" /> Pagar agora
                               </Button>
@@ -847,6 +848,17 @@ const Account = () => {
           </TabsContent>
         </Tabs>
       </div>
+
+      {payOrderTarget && (
+        <PayOrderDialog
+          order={payOrderTarget}
+          open={!!payOrderTarget}
+          onOpenChange={(o) => {
+            if (!o) setPayOrderTarget(null);
+          }}
+          onPaid={loadOrders}
+        />
+      )}
     </Layout>
   );
 };

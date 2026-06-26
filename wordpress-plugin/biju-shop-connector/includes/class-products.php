@@ -6,29 +6,32 @@ defined( 'ABSPATH' ) || exit;
  */
 class Biju_Products {
 
+    /** TTL do cache de listagem/detalhe de produtos (segundos). */
+    const PRODUCTS_TTL   = 5 * MINUTE_IN_SECONDS;
+    /** TTL do cache de categorias (mudam raramente). */
+    const CATEGORIES_TTL = 15 * MINUTE_IN_SECONDS;
+
     /**
      * GET /biju/v1/products
      */
     public static function get_products( WP_REST_Request $request ): WP_REST_Response {
         $args = [
-            'status'         => 'publish',
-            'limit'          => (int) ( $request->get_param( 'per_page' ) ?? 20 ),
-            'page'           => (int) ( $request->get_param( 'page' ) ?? 1 ),
-            'orderby'        => $request->get_param( 'orderby' ) ?? 'date',
-            'order'          => $request->get_param( 'order' ) ?? 'DESC',
+            'status'  => 'publish',
+            'limit'   => (int) ( $request->get_param( 'per_page' ) ?? 20 ),
+            'page'    => (int) ( $request->get_param( 'page' ) ?? 1 ),
+            'orderby' => $request->get_param( 'orderby' ) ?? 'date',
+            'order'   => $request->get_param( 'order' ) ?? 'DESC',
         ];
 
         // Filtro por categoria — aceita slug ou nome do termo
         $category = $request->get_param( 'category' );
         if ( $category ) {
             $cat_val = sanitize_text_field( $category );
-            // Primeiro tenta por slug
+            // Primeiro tenta por slug (caminho rápido), depois por nome (fallback).
             $term = get_term_by( 'slug', $cat_val, 'product_cat' );
-            // Se não encontrar, tenta por nome
             if ( ! $term instanceof WP_Term ) {
                 $term = get_term_by( 'name', $cat_val, 'product_cat' );
             }
-            // Só adiciona o filtro se encontrou a categoria
             if ( $term instanceof WP_Term ) {
                 $args['category'] = [ $term->slug ];
             }
@@ -45,21 +48,80 @@ class Biju_Products {
             $args['featured'] = true;
         }
 
-        $products = wc_get_products( $args );
+        // Resposta cacheada por combinação de parâmetros + versão do cache.
+        // Buscas textuais não são cacheadas (resultado muito variável / baixo reuso).
+        $compute = function () use ( $args ) {
+            // 'paginate' => true devolve total e max_num_pages numa única query,
+            // eliminando a antiga query "fantasma" com limit => -1 só para contar.
+            $result = wc_get_products( array_merge( $args, [ 'paginate' => true ] ) );
+            $products    = $result->products ?? [];
+            $total       = (int) ( $result->total ?? 0 );
+            $total_pages = (int) ( $result->max_num_pages ?? 0 );
 
-        $count_args = array_merge( $args, [ 'return' => 'ids', 'limit' => -1, 'page' => 1 ] );
-        $all_ids    = wc_get_products( $count_args );
-        $total      = is_array( $all_ids ) ? count( $all_ids ) : 0;
-        $per_page   = max( 1, (int) $args['limit'] );
-        $total_pages = (int) ceil( $total / $per_page );
+            self::prime_caches( $products );
 
-        $data = array_map( [ __CLASS__, 'format_product' ], $products );
+            $data = array_map(
+                fn( WC_Product $p ) => self::format_product( $p, 'list' ),
+                $products
+            );
 
-        $response = new WP_REST_Response( $data, 200 );
-        $response->header( 'X-WP-Total', $total );
-        $response->header( 'X-WP-TotalPages', $total_pages );
+            return [ 'data' => $data, 'total' => $total, 'total_pages' => $total_pages ];
+        };
+
+        if ( empty( $args['s'] ) ) {
+            $cache_key = 'products|' . wp_json_encode( $args );
+            $payload   = Biju_Cache::remember( $cache_key, self::PRODUCTS_TTL, $compute );
+        } else {
+            $payload = $compute();
+        }
+
+        $response = new WP_REST_Response( $payload['data'], 200 );
+        $response->header( 'X-WP-Total', $payload['total'] );
+        $response->header( 'X-WP-TotalPages', $payload['total_pages'] );
+        self::cache_headers( $response );
 
         return $response;
+    }
+
+    /**
+     * Pré-aquece os caches de posts/metadados/termos/imagens em LOTE, para que a
+     * serialização de cada produto (format_product) acerte o object cache em vez
+     * de disparar uma query por produto/imagem (problema N+1).
+     *
+     * @param WC_Product[] $products
+     */
+    private static function prime_caches( array $products ): void {
+        if ( empty( $products ) ) return;
+
+        $product_ids = array_map( fn( $p ) => $p->get_id(), $products );
+
+        // Posts + metadados dos produtos e termos (categorias/atributos)
+        _prime_post_caches( $product_ids, true, true );
+        update_object_term_cache( $product_ids, 'product' );
+
+        // Imagens (principal + galeria) de todos os produtos de uma vez
+        $image_ids = [];
+        foreach ( $products as $p ) {
+            $main = (int) $p->get_image_id();
+            if ( $main ) $image_ids[] = $main;
+            foreach ( (array) $p->get_gallery_image_ids() as $gid ) {
+                $image_ids[] = (int) $gid;
+            }
+        }
+        $image_ids = array_values( array_unique( array_filter( $image_ids ) ) );
+        if ( ! empty( $image_ids ) ) {
+            _prime_post_caches( $image_ids, false, true );
+        }
+    }
+
+    /**
+     * Headers HTTP para que browser e CDN/proxy possam cachear rotas públicas.
+     */
+    private static function cache_headers( WP_REST_Response $response, int $max_age = 60, int $s_max_age = 300 ): void {
+        $response->header(
+            'Cache-Control',
+            "public, max-age={$max_age}, s-maxage={$s_max_age}, stale-while-revalidate=600"
+        );
     }
 
     /**
@@ -73,53 +135,69 @@ class Biju_Products {
             return new WP_Error( 'not_found', 'Produto não encontrado.', [ 'status' => 404 ] );
         }
 
-        return new WP_REST_Response( self::format_product( $product ), 200 );
+        // Detalhe (contexto 'full': inclui variações e descrição completa).
+        $data = Biju_Cache::remember(
+            "product|{$id}",
+            self::PRODUCTS_TTL,
+            fn() => self::format_product( $product, 'full' )
+        );
+
+        $response = new WP_REST_Response( $data, 200 );
+        self::cache_headers( $response );
+        return $response;
     }
 
     /**
      * GET /biju/v1/categories
      */
     public static function get_categories( WP_REST_Request $request ): WP_REST_Response {
-        $terms = get_terms( [
-            'taxonomy'   => 'product_cat',
-            'hide_empty' => true,
-            'orderby'    => 'name',
-        ] );
-
-        if ( is_wp_error( $terms ) ) {
-            return new WP_REST_Response( [], 200 );
-        }
-
-        $data = array_map( function ( WP_Term $term ) {
-            $thumb_id  = get_term_meta( $term->term_id, 'thumbnail_id', true );
-            $thumb_url = $thumb_id ? wp_get_attachment_url( $thumb_id ) : null;
-
-            // Contar apenas produtos publicados nesta categoria
-            $published_ids = wc_get_products( [
-                'status'   => 'publish',
-                'category' => [ $term->slug ],
-                'return'   => 'ids',
-                'limit'    => -1,
+        $data = Biju_Cache::remember( 'categories', self::CATEGORIES_TTL, function () {
+            $terms = get_terms( [
+                'taxonomy'   => 'product_cat',
+                'hide_empty' => true,
+                'orderby'    => 'name',
             ] );
-            $count = is_array( $published_ids ) ? count( $published_ids ) : 0;
 
-            return [
-                'id'    => $term->term_id,
-                'name'  => $term->name,
-                'slug'  => $term->slug,
-                'count' => $count,
-                'image' => $thumb_url,
-            ];
-        }, $terms );
+            if ( is_wp_error( $terms ) ) {
+                return [];
+            }
 
-        return new WP_REST_Response( $data, 200 );
+            // array_values garante chaves sequenciais 0..n-1. Sem isso, qualquer
+            // buraco no array (ex.: term filtrado/removido) faz o json_encode
+            // serializar como OBJETO {...} em vez de ARRAY [...], e o frontend
+            // (Array.isArray) descarta a resposta e cai no fallback hardcoded.
+            return array_values( array_map( function ( WP_Term $term ) {
+                $thumb_id  = get_term_meta( $term->term_id, 'thumbnail_id', true );
+                $thumb_url = $thumb_id ? wp_get_attachment_url( $thumb_id ) : null;
+
+                return [
+                    'id'    => $term->term_id,
+                    'name'  => $term->name,
+                    'slug'  => $term->slug,
+                    // $term->count já reflete só produtos publicados (WooCommerce
+                    // mantém a contagem via _wc_term_recount). Antes isso disparava
+                    // uma query limit => -1 por categoria (N+1).
+                    'count' => (int) $term->count,
+                    'image' => $thumb_url,
+                ];
+            }, $terms ) );
+        } );
+
+        $response = new WP_REST_Response( $data, 200 );
+        self::cache_headers( $response );
+        return $response;
     }
 
     // -------------------------------------------------------------------------
     // Formato de saída compatível com o frontend React
     // -------------------------------------------------------------------------
 
-    public static function format_product( WC_Product $product ): array {
+    /**
+     * @param string $context 'list' (grade — payload enxuto, sem variações nem
+     *                          descrição longa) ou 'full' (detalhe do produto).
+     */
+    public static function format_product( WC_Product $product, string $context = 'full' ): array {
+        $is_full = ( 'full' === $context );
         // Usa o tamanho 'large' (~1024px) ao invés do original — mesma percepção
         // visual em desktop/celular, mas 5-10x mais leve. Para thumbs de card/cart,
         // o frontend pode usar images_thumb (woocommerce_thumbnail ~324px).
@@ -139,12 +217,31 @@ class Biju_Products {
             $gallery_ids
         ) ) );
 
+        // Monta o srcset do card (1x/2x) a partir dos tamanhos dedicados
+        // 'biju_card' (360w) e 'biju_card_2x' (540w). Faz fallback ao thumb
+        // do Woo se o tamanho ainda não tiver sido gerado, para nunca quebrar.
+        $build_srcset = function ( int $id ) use ( $resolve_image ): ?string {
+            if ( ! $id ) return null;
+            $s1 = $resolve_image( $id, 'biju_card' );
+            $s2 = $resolve_image( $id, 'biju_card_2x' );
+            $parts = [];
+            if ( $s1 ) $parts[] = $s1 . ' 360w';
+            if ( $s2 ) $parts[] = $s2 . ' 540w';
+            return $parts ? implode( ', ', $parts ) : null;
+        };
+        $images_srcset = array_values( array_filter( array_map(
+            fn( $id ) => $build_srcset( (int) $id ),
+            $gallery_ids
+        ) ) );
+
         // Inclui a imagem principal na frente
-        $main_id    = (int) $product->get_image_id();
-        $main_large = $resolve_image( $main_id, 'large' );
-        $main_thumb = $resolve_image( $main_id, 'woocommerce_thumbnail' );
-        if ( $main_large ) array_unshift( $images, $main_large );
-        if ( $main_thumb ) array_unshift( $images_thumb, $main_thumb );
+        $main_id     = (int) $product->get_image_id();
+        $main_large  = $resolve_image( $main_id, 'large' );
+        $main_thumb  = $resolve_image( $main_id, 'woocommerce_thumbnail' );
+        $main_srcset = $build_srcset( $main_id );
+        if ( $main_large )  array_unshift( $images, $main_large );
+        if ( $main_thumb )  array_unshift( $images_thumb, $main_thumb );
+        if ( $main_srcset ) array_unshift( $images_srcset, $main_srcset );
 
         // Atributos (todos)
         $colors          = [];
@@ -190,9 +287,11 @@ class Biju_Products {
             ];
         }
 
-        // Variações (apenas para produtos do tipo "variable")
+        // Variações: get_available_variations() é caro (carrega cada variação como
+        // produto completo). Só materializa no detalhe ('full'); na listagem o card
+        // só precisa de 'type' para saber que é variável.
         $variations_out = [];
-        if ( $product->is_type( 'variable' ) && method_exists( $product, 'get_available_variations' ) ) {
+        if ( $is_full && $product->is_type( 'variable' ) && method_exists( $product, 'get_available_variations' ) ) {
             foreach ( $product->get_available_variations() as $v ) {
                 $vimg = $v['image']['src'] ?? ( $v['image']['url'] ?? '' );
                 $variations_out[] = [
@@ -231,11 +330,15 @@ class Biju_Products {
             'name'          => $product->get_name(),
             'price'         => (float) $product->get_price(),
             'originalPrice' => $sale && $regular > $sale ? $regular : null,
-            'description'   => wp_strip_all_tags( $product->get_description() ?: $product->get_short_description() ),
+            // Descrição longa só no detalhe; na listagem reduz o payload.
+            'description'   => $is_full
+                ? wp_strip_all_tags( $product->get_description() ?: $product->get_short_description() )
+                : wp_strip_all_tags( $product->get_short_description() ),
             'shortDescription' => wp_strip_all_tags( $product->get_short_description() ),
             'category'      => $category,
             'images'        => $images ?: [ wc_placeholder_img_src() ],
             'images_thumb'  => $images_thumb ?: ( $images ?: [ wc_placeholder_img_src() ] ),
+            'images_srcset' => $images_srcset, // srcset 1x/2x p/ o card (pode ser [] em fallback)
             'has_image'     => ! empty( $images ), // false = caiu no placeholder do Woo
             'badge'         => $badge,
             'rating'        => (float) $product->get_average_rating(),

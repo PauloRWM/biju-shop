@@ -29,6 +29,53 @@ add_action( 'before_woocommerce_init', function () {
     }
 } );
 
+// ───────────────────────────────────────────────────────────────────────────
+// Tamanhos de imagem dedicados ao card do frontend.
+//
+// O card de produto é exibido a ~177px (mobile) / ~300px (desktop). O tamanho
+// padrão 'woocommerce_thumbnail' costuma vir grande demais (ou cair no original
+// quando não foi gerado). Registramos dois tamanhos próprios para montar um
+// srcset enxuto: 1x (~360px) e 2x (~540px, para telas retina).
+//
+// Após adicionar/alterar estes tamanhos, regenere as miniaturas existentes
+// (plugin "Regenerate Thumbnails" ou wp-cli `wp media regenerate`).
+// ───────────────────────────────────────────────────────────────────────────
+add_action( 'after_setup_theme', function () {
+    add_image_size( 'biju_card', 360, 450, true );      // 1x — crop 4:5
+    add_image_size( 'biju_card_2x', 540, 675, true );   // 2x retina — crop 4:5
+} );
+
+// ───────────────────────────────────────────────────────────────────────────
+// BLOQUEIO PERMANENTE DE ENCOMENDAS (BACKORDERS)
+//
+// Garante que NENHUM produto aceite encomenda (venda com estoque <= 0), mesmo
+// que a opção "Permitir encomendas" seja ativada por engano no admin, por
+// importação de planilha ou por sincronização de outro plugin.
+//
+//   - woocommerce_product_get_backorders / _variation_get_backorders:
+//       força a leitura do valor sempre como 'no' em qualquer produto/variação.
+//   - woocommerce_product_backorders_allowed:
+//       garante que a checagem "encomenda permitida?" sempre retorne falso.
+//   - woocommerce_product_get_stock_status / _variation_get_stock_status:
+//       converte qualquer status 'onbackorder' para 'outofstock'.
+//
+// Efeito: produtos esgotados aparecem como "Fora de estoque" e nunca como
+// "Disponível por encomenda"; o aviso de encomenda deixa de ser disparado.
+// ───────────────────────────────────────────────────────────────────────────
+add_filter( 'woocommerce_product_get_backorders', 'biju_forcar_sem_encomenda', 99 );
+add_filter( 'woocommerce_product_variation_get_backorders', 'biju_forcar_sem_encomenda', 99 );
+function biju_forcar_sem_encomenda( $value ) {
+    return 'no';
+}
+
+add_filter( 'woocommerce_product_backorders_allowed', '__return_false', 99 );
+
+add_filter( 'woocommerce_product_get_stock_status', 'biju_sem_status_encomenda', 99 );
+add_filter( 'woocommerce_product_variation_get_stock_status', 'biju_sem_status_encomenda', 99 );
+function biju_sem_status_encomenda( $status ) {
+    return ( 'onbackorder' === $status ) ? 'outofstock' : $status;
+}
+
 // Verificar dependência do WooCommerce
 add_action( 'admin_init', 'biju_check_woocommerce' );
 function biju_check_woocommerce() {
@@ -41,6 +88,8 @@ function biju_check_woocommerce() {
 }
 
 // Carregar módulos
+require_once BIJU_CONNECTOR_PATH . 'includes/class-cache.php';
+require_once BIJU_CONNECTOR_PATH . 'includes/class-perf-probe.php'; // diagnóstico temporário
 require_once BIJU_CONNECTOR_PATH . 'includes/class-cors.php';
 require_once BIJU_CONNECTOR_PATH . 'includes/class-auth.php';
 require_once BIJU_CONNECTOR_PATH . 'includes/class-products.php';
@@ -52,6 +101,7 @@ require_once BIJU_CONNECTOR_PATH . 'includes/class-meta-pixel.php';
 require_once BIJU_CONNECTOR_PATH . 'includes/class-shipping.php';
 require_once BIJU_CONNECTOR_PATH . 'includes/class-coupons.php';
 require_once BIJU_CONNECTOR_PATH . 'includes/class-abandoned-cart.php';
+require_once BIJU_CONNECTOR_PATH . 'includes/class-product-duplicator.php';
 require_once BIJU_CONNECTOR_PATH . 'includes/class-rest-api.php';
 
 // Inicializar
@@ -59,8 +109,15 @@ add_action( 'plugins_loaded', function () {
     if ( ! class_exists( 'WooCommerce' ) ) return;
 
     Biju_CORS::init();
+    Biju_Cache::init();
+    Biju_Perf_Probe::init(); // diagnóstico temporário — remover depois
     Biju_REST_API::init();
     Biju_Meta_Pixel::init();
+    Biju_Product_Duplicator::init();
+
+    // Envio em background do e-mail "novo pedido" agendado no checkout
+    // (mantém o SMTP fora do caminho crítico da resposta ao cliente).
+    add_action( Biju_Orders::NEW_ORDER_EMAIL_HOOK, [ 'Biju_Orders', 'send_new_order_email' ], 10, 1 );
 
     // Reembolso: quando admin clica "Reembolsar" no painel Woo, chama nossa API MP.
     // Hook do Woo: woocommerce_refund_created($refund_id, $args). $args contém

@@ -1,4 +1,4 @@
-import { Link, useNavigate, useSearchParams } from "react-router-dom";
+import { Link, useNavigate, useSearchParams, useLocation } from "react-router-dom";
 import { User, Search, Loader2, Package, LogOut } from "lucide-react";
 import { useState, useEffect, useRef, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
@@ -6,7 +6,7 @@ import CartDrawer from "@/components/CartDrawer";
 import { fetchProducts } from "@/services/products";
 import type { Product } from "@/data/products";
 import { trackSearch } from "@/services/metaPixel";
-import { getAuthToken } from "@/services/api";
+import { getAuthToken, ApiError } from "@/services/api";
 import { fetchAccount, logout as authLogout } from "@/services/auth";
 
 function useDebounce(value: string, delay = 300) {
@@ -31,28 +31,69 @@ const Header = () => {
   const searchRef = useRef<HTMLDivElement>(null);
   const mobileSearchRef = useRef<HTMLInputElement>(null);
 
-  // Estado de login: nome (primeiro nome) ou null se guest.
-  const [userFirstName, setUserFirstName] = useState<string | null>(null);
+  // Estado de login. Se há token, hidrata IMEDIATAMENTE do cache local
+  // (biju_user_name), evitando flash de "Conta" enquanto o /account responde.
+  // Cai para "Conta" se nunca foi salvo, e pra null se não houver token.
+  const [userFirstName, setUserFirstName] = useState<string | null>(() => {
+    if (!getAuthToken()) return null;
+    try {
+      return localStorage.getItem("biju_user_name") || "Conta";
+    } catch {
+      return "Conta";
+    }
+  });
   const isLoggedIn = userFirstName !== null;
-  useEffect(() => {
+
+  // Refetch ao montar E quando volta para a página (caso o login tenha
+  // acontecido em outra rota e o Header já estava montado).
+  const refreshAccount = useCallback(() => {
     if (!getAuthToken()) {
       setUserFirstName(null);
+      try { localStorage.removeItem("biju_user_name"); } catch { /* ignore */ }
       return;
     }
-    let cancelled = false;
     fetchAccount()
       .then((acc) => {
-        if (cancelled) return;
         const first = acc.user.firstName?.trim() || acc.user.name?.trim().split(" ")[0] || "";
-        setUserFirstName(first || acc.user.email?.split("@")[0] || "Conta");
+        const name = first || acc.user.email?.split("@")[0] || "Conta";
+        setUserFirstName(name);
+        try { localStorage.setItem("biju_user_name", name); } catch { /* ignore */ }
       })
-      .catch(() => {
-        if (!cancelled) setUserFirstName(null);
+      .catch((err) => {
+        // SÓ desloga em 401/403 real (token inválido/expirado). Erros
+        // transitórios — timeout, falha de rede, 5xx do servidor — NÃO podem
+        // apagar a sessão: o token ainda é válido. Mantém o nome hidratado do
+        // cache e tenta de novo na próxima navegação. Antes, qualquer erro
+        // (até um timeout) zerava o nome "do nada".
+        if (err instanceof ApiError && (err.status === 401 || err.status === 403)) {
+          setUserFirstName(null);
+          try { localStorage.removeItem("biju_user_name"); } catch { /* ignore */ }
+        }
       });
-    return () => {
-      cancelled = true;
-    };
   }, []);
+
+  useEffect(() => {
+    refreshAccount();
+    // Re-checa quando outra aba muda o storage (login em outra aba).
+    const onStorage = (e: StorageEvent) => {
+      if (e.key === "biju_token") refreshAccount();
+    };
+    // Re-checa quando setAuthToken é chamado na mesma aba (login/logout).
+    const onAuthChange = () => refreshAccount();
+    window.addEventListener("storage", onStorage);
+    window.addEventListener("biju:auth-change", onAuthChange);
+    return () => {
+      window.removeEventListener("storage", onStorage);
+      window.removeEventListener("biju:auth-change", onAuthChange);
+    };
+  }, [refreshAccount]);
+
+  // Re-checa também a cada mudança de rota (navegação para /conta e volta).
+  const location = useLocation();
+  useEffect(() => {
+    refreshAccount();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [location.pathname]);
 
   const handleLogout = () => {
     authLogout();

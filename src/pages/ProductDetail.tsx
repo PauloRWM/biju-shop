@@ -1,4 +1,5 @@
 import { useParams, Link, useNavigate } from "react-router-dom";
+import DOMPurify from "dompurify";
 import { useProduct, useProducts } from "@/hooks/useProducts";
 import { products as fallbackProducts } from "@/data/products";
 import Layout from "@/components/layout/Layout";
@@ -38,10 +39,10 @@ const ProductDetail = () => {
   const isNotFound =
     isError && (error as { status?: number } | null)?.status === 404;
   const product = apiProduct ?? (isError && !isNotFound ? fallbackProducts.find((p) => p.id === id) : undefined);
-  const { data: relatedPage } = useProducts({
-    category: product?.category,
-    per_page: 5,
-  });
+  const { data: relatedPage } = useProducts(
+    { category: product?.category, per_page: 5 },
+    { enabled: !!product?.category },
+  );
   const { addItem, items, updateQuantity } = useCart();
   const navigate = useNavigate();
   const [selectedImage, setSelectedImage] = useState(0);
@@ -169,22 +170,30 @@ const ProductDetail = () => {
       toast.error("Selecione todas as opções antes.");
       return;
     }
+    if (!effectiveInStock) {
+      toast.error("Produto sem estoque no momento.");
+      return;
+    }
     if (hasStockLimit && displayQty >= (effectiveStock as number)) {
       toast.error(`Apenas ${effectiveStock} em estoque.`);
       return;
     }
     if (cartQty === 0) {
-      addItem(product, 1, {
+      const ok = addItem(product, 1, {
         variationId: matchedVariation?.id,
         variationLabel,
         unitPrice: effectivePrice,
+        inStock: effectiveInStock,
+        maxStock: effectiveStock,
       });
-      trackAddToCart({
-        productId: product.id,
-        name: product.name,
-        price: effectivePrice,
-        quantity: 1,
-      });
+      if (ok) {
+        trackAddToCart({
+          productId: product.id,
+          name: product.name,
+          price: effectivePrice,
+          quantity: 1,
+        });
+      }
     } else {
       updateQuantity(product.id, cartQty + 1, matchedVariation?.id);
     }
@@ -569,6 +578,21 @@ const ProductDetail = () => {
               </Button>
             </div>
 
+            {/* Aviso de estoque — mostrado quando o produto (ou a variação
+                selecionada) está esgotado, deixando claro por que não dá pra adicionar. */}
+            {!effectiveInStock && (!hasVariations || !!matchedVariation) && (
+              <div
+                role="alert"
+                className="mb-3 flex items-center gap-2 rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive"
+              >
+                <span className="font-medium">
+                  {hasVariations
+                    ? "Esta opção está esgotada. Selecione outra variação."
+                    : "Produto esgotado no momento."}
+                </span>
+              </div>
+            )}
+
             {/* Calcular frete */}
             <div className="border rounded-lg p-3 mb-3 bg-card">
               <label className="text-xs font-medium text-foreground flex items-center gap-1.5 mb-1.5">
@@ -671,7 +695,7 @@ const ProductDetail = () => {
             </h2>
             <div
               className="prose prose-sm max-w-3xl text-muted-foreground leading-relaxed [&_p]:mb-3 [&_ul]:list-disc [&_ul]:pl-5 [&_ul]:mb-3 [&_li]:mb-1 [&_strong]:text-foreground [&_strong]:font-medium"
-              dangerouslySetInnerHTML={{ __html: product.description }}
+              dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(product.description) }}
             />
           </section>
         )}

@@ -48,6 +48,7 @@ export interface CreateOrderPayload {
     expiration_year?: string;
     installments_amount?: number;
     total_paid_amount?: number;
+    device_id?: string;
   };
 }
 
@@ -73,6 +74,7 @@ export interface Order {
   subtotal: number;
   paymentMethod: string;
   paymentTitle: string;
+  cpf?: string;
   items: {
     product_id: number;
     name: string;
@@ -105,4 +107,18 @@ export async function fetchOrder(id: number): Promise<Order> {
 
 export async function fetchMyOrders(): Promise<Order[]> {
   return api.get<Order[]>('/account/orders');
+}
+
+export interface PayOrderPayload {
+  payment_method: 'pix' | 'credit_card' | 'billet';
+  card?: CreateOrderPayload['card'];
+}
+
+/**
+ * Paga um pedido já criado que ficou aguardando pagamento (botão "Pagar agora"
+ * na conta). Regera o pagamento via Mercado Pago e devolve o pedido atualizado
+ * com `payment` (QR PIX / status do cartão).
+ */
+export async function payOrder(id: number, payload: PayOrderPayload): Promise<Order> {
+  return api.post<Order>(`/orders/${id}/pay`, payload);
 }

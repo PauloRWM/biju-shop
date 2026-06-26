@@ -1,5 +1,5 @@
-import { useMutation, useQuery } from '@tanstack/react-query';
-import { createOrder, fetchOrder, fetchMyOrders, type CreateOrderPayload } from '@/services/orders';
+import { useMutation, useQuery, type Query } from '@tanstack/react-query';
+import { createOrder, fetchOrder, fetchMyOrders, type CreateOrderPayload, type Order } from '@/services/orders';
 
 export function useCreateOrder() {
   return useMutation({
@@ -7,7 +7,12 @@ export function useCreateOrder() {
   });
 }
 
-export function useOrder(id: number | undefined, opts?: { refetchInterval?: number | false }) {
+type RefetchInterval =
+  | number
+  | false
+  | ((query: Query<Order, Error, Order, readonly unknown[]>) => number | false);
+
+export function useOrder(id: number | undefined, opts?: { refetchInterval?: RefetchInterval }) {
   return useQuery({
     queryKey: ['order', id],
     queryFn: () => fetchOrder(id!),

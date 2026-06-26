@@ -108,7 +108,7 @@ class Biju_Orders {
         foreach ( (array) $body['items'] as $item ) {
             $product_id   = absint( $item['product_id'] ?? 0 );
             $variation_id = absint( $item['variation_id'] ?? 0 );
-            $quantity     = absint( $item['quantity'] ?? 1 );
+            $quantity     = max( 1, absint( $item['quantity'] ?? 1 ) );
 
             $target_id = $variation_id ?: $product_id;
             $target    = wc_get_product( $target_id );
@@ -117,6 +117,25 @@ class Biju_Orders {
                 $order->delete( true );
                 return new WP_Error( 'product_unavailable',
                     "Produto $product_id indisponível.", [ 'status' => 422 ] );
+            }
+
+            // Valida a QUANTIDADE pedida contra o estoque disponível. O front já
+            // limita, mas isto fecha o caso de estoque que mudou no meio do checkout
+            // ou de chamada direta à API. has_enough_stock() já considera
+            // managing_stock e backorders, e retorna true quando o produto não
+            // gerencia estoque (estoque ilimitado).
+            if ( ! $target->has_enough_stock( $quantity ) ) {
+                $available = $target->get_stock_quantity();
+                $order->delete( true );
+                return new WP_Error(
+                    'insufficient_stock',
+                    sprintf(
+                        'Estoque insuficiente para "%s". Disponível: %s.',
+                        $target->get_name(),
+                        is_null( $available ) ? '0' : (string) max( 0, (int) $available )
+                    ),
+                    [ 'status' => 422 ]
+                );
             }
 
             // Para variações, passar atributos para WC registrar corretamente no item
@@ -245,6 +264,16 @@ class Biju_Orders {
         $order->set_status( 'pending', 'Pedido recebido via Biju Shop.' );
         $order->save();
 
+        // Reserva de estoque — fecha a corrida de oversell. Precisa vir DEPOIS
+        // do save (a reserva referencia o ID do pedido) e ANTES da cobrança: se
+        // a última unidade já foi reservada por outro pedido pendente, abortamos
+        // sem cobrar. Ver doc de reserve_stock_or_fail().
+        $reserve_error = self::reserve_stock_or_fail( $order );
+        if ( $reserve_error ) {
+            $order->delete( true );
+            return $reserve_error;
+        }
+
         // Remove carrinho abandonado — o usuário finalizou o checkout
         if ( $user_id ) {
             global $wpdb;
@@ -274,7 +303,14 @@ class Biju_Orders {
         if ( ! $payment_failed ) {
             // PIX/boleto: status on-hold; cartão aprovado: processing.
             // Em todos esses casos o admin precisa saber.
-            WC()->mailer()->emails['WC_Email_New_Order']->trigger( $order->get_id() );
+            //
+            // NÃO disparamos o e-mail de forma síncrona (->trigger()) porque o
+            // SMTP entraria no caminho crítico do checkout — o cliente ficaria
+            // esperando o envio do e-mail antes de receber o QR/boleto/resposta.
+            // Em vez disso, agendamos o envio em background via Action Scheduler
+            // (incluso no WooCommerce). Fallback: WP-Cron single event; e por
+            // último o envio síncrono se nenhum agendador estiver disponível.
+            self::dispatch_new_order_email( $order->get_id() );
         }
 
         $response = self::format_order( $order );
@@ -283,6 +319,101 @@ class Biju_Orders {
         }
 
         return new WP_REST_Response( $response, 201 );
+    }
+
+    /**
+     * Reserva o estoque dos itens do pedido para fechar a corrida de oversell.
+     *
+     * Por que isto é necessário no headless:
+     *   O estoque do WooCommerce só é BAIXADO quando o pagamento é confirmado
+     *   (payment_complete → status processing/completed). Entre a criação do
+     *   pedido (pending) e o pagamento — janela que no PIX chega a 10h — vários
+     *   clientes podem criar pedidos para a MESMA última unidade, todos passando
+     *   na checagem has_enough_stock() (que ainda vê o estoque cheio) e todos
+     *   pagando depois → estoque negativo / venda sem estoque.
+     *
+     *   wc_reserve_stock_for_order() grava uma reserva temporária na tabela
+     *   wc_reserved_stock — a MESMA usada pelo checkout nativo. A reserva é
+     *   descontada por get_available_stock()/has_enough_stock(), então o 2º
+     *   pedido para a última unidade falha AQUI, antes de cobrar.
+     *
+     * Requisitos no WooCommerce (Ajustes → Produtos → Inventário):
+     *   - "Gerir stock?" (woocommerce_manage_stock) = ATIVADO;
+     *   - "Manter stock (minutos)" > 0 — define a validade da reserva. Para
+     *     cobrir a janela do PIX (10h) o ideal é >= 600. Se ficar vazio/0 a
+     *     reserva NÃO é criada (no-op) e o oversell volta a ser possível.
+     *
+     * Observação: produtos com "Gerir stock?" desmarcado têm estoque ilimitado
+     * para o WooCommerce — não são reservados nem limitados aqui. Para esses,
+     * o único controle é marcar manualmente "Fora de stock".
+     *
+     * Retorna WP_Error quando não há estoque disponível (outro pedido reservou),
+     * ou null em caso de sucesso / API de reserva indisponível.
+     */
+    private static function reserve_stock_or_fail( WC_Order $order ): ?WP_Error {
+        if ( ! function_exists( 'wc_reserve_stock_for_order' ) ) {
+            return null; // WooCommerce < 4.0 — sem API de reserva.
+        }
+        try {
+            wc_reserve_stock_for_order( $order );
+        } catch ( \Exception $e ) {
+            // ReserveStockException: estoque insuficiente considerando as
+            // reservas de outros pedidos pendentes para o mesmo item.
+            return new WP_Error(
+                'stock_reserved',
+                'Um dos itens acabou de esgotar enquanto você finalizava a compra. Revise o carrinho e tente novamente.',
+                [ 'status' => 409, 'detail' => $e->getMessage() ]
+            );
+        }
+        return null;
+    }
+
+    /**
+     * Hook usado para enviar o e-mail "novo pedido" em background.
+     * Registrado em biju-shop-connector.php (plugins_loaded).
+     */
+    const NEW_ORDER_EMAIL_HOOK = 'biju_send_new_order_email';
+
+    /**
+     * Agenda o envio do e-mail "novo pedido" fora do request do checkout.
+     *
+     * Ordem de preferência:
+     *   1. Action Scheduler (as_enqueue_async_action) — vem com o WooCommerce e
+     *      processa em background sem WP-Cron de página.
+     *   2. WP-Cron single event imediato — fallback se o Action Scheduler não
+     *      estiver carregado por algum motivo.
+     *   3. Envio síncrono — só se nenhum agendador existir (não deveria ocorrer
+     *      num WooCommerce saudável), para nunca deixar o admin sem aviso.
+     */
+    private static function dispatch_new_order_email( int $order_id ): void {
+        if ( function_exists( 'as_enqueue_async_action' ) ) {
+            // Evita duplicar caso, por algum motivo, já exista uma agendada.
+            if ( ! function_exists( 'as_has_scheduled_action' )
+                || ! as_has_scheduled_action( self::NEW_ORDER_EMAIL_HOOK, [ $order_id ], 'biju-shop' ) ) {
+                as_enqueue_async_action( self::NEW_ORDER_EMAIL_HOOK, [ $order_id ], 'biju-shop' );
+            }
+            return;
+        }
+
+        if ( function_exists( 'wp_schedule_single_event' ) ) {
+            wp_schedule_single_event( time(), self::NEW_ORDER_EMAIL_HOOK, [ $order_id ] );
+            return;
+        }
+
+        // Último recurso: envia agora mesmo.
+        self::send_new_order_email( $order_id );
+    }
+
+    /**
+     * Handler do hook agendado: envia de fato o e-mail "novo pedido".
+     * Recarrega o mailer porque pode rodar num request/cron separado.
+     */
+    public static function send_new_order_email( int $order_id ): void {
+        if ( ! $order_id || ! function_exists( 'WC' ) ) return;
+        $mailer = WC()->mailer();
+        if ( ! empty( $mailer->emails['WC_Email_New_Order'] ) ) {
+            $mailer->emails['WC_Email_New_Order']->trigger( $order_id );
+        }
     }
 
     /**
@@ -843,7 +974,71 @@ class Biju_Orders {
             }
         }
 
-        return new WP_REST_Response( self::format_order( $order ), 200 );
+        // CPF só sai para o dono autenticado (ou admin) — pedidos de convidado
+        // (customer_id=0) são legíveis por ID, então não vazamos o documento.
+        $is_owner = $user_id && $order->get_customer_id() === $user_id;
+        $include_private = $is_owner || current_user_can( 'manage_woocommerce' );
+
+        return new WP_REST_Response( self::format_order( $order, $include_private ), 200 );
+    }
+
+    /**
+     * POST /biju/v1/orders/{id}/pay
+     *
+     * Regera o pagamento de um pedido que ainda está aguardando pagamento
+     * (pending / on-hold / failed). Usado pelo botão "Pagar agora" na conta do
+     * cliente — quando o pedido foi criado mas o pagamento não foi concluído.
+     *
+     * Body: { "payment_method": "pix" | "credit_card" | "billet", "card"?: {...} }
+     *
+     * Acesso: somente o dono do pedido (ou um admin). Cobra o total que já está
+     * gravado no pedido — não recalcula desconto de PIX nem mexe nos itens, para
+     * nunca alterar silenciosamente o valor que o cliente deve.
+     */
+    public static function pay_order( WP_REST_Request $request ): WP_REST_Response|WP_Error {
+        $order_id = (int) $request->get_param( 'id' );
+        $order    = wc_get_order( $order_id );
+        if ( ! $order ) {
+            return new WP_Error( 'not_found', 'Pedido não encontrado.', [ 'status' => 404 ] );
+        }
+
+        // Auth — só o dono (ou admin) pode disparar o pagamento.
+        $user_id = Biju_Auth::get_user_from_request( $request );
+        $is_admin = current_user_can( 'manage_woocommerce' );
+        if ( ! $user_id && ! $is_admin ) {
+            return new WP_Error( 'unauthorized', 'Faça login para pagar este pedido.', [ 'status' => 401 ] );
+        }
+        if ( $order->get_customer_id() && $order->get_customer_id() !== $user_id && ! $is_admin ) {
+            return new WP_Error( 'forbidden', 'Acesso negado.', [ 'status' => 403 ] );
+        }
+
+        // Só pedidos que ainda estão aguardando pagamento podem ser cobrados de novo.
+        if ( ! in_array( $order->get_status(), [ 'pending', 'on-hold', 'failed' ], true ) ) {
+            return new WP_Error( 'not_payable', 'Este pedido não está mais aguardando pagamento.', [ 'status' => 409 ] );
+        }
+
+        $body           = $request->get_json_params() ?: [];
+        $payment_method = sanitize_text_field( $body['payment_method'] ?? 'pix' );
+        $card_payload   = is_array( $body['card'] ?? null ) ? $body['card'] : [];
+
+        // Reflete a forma de pagamento escolhida agora no pedido.
+        $order->set_payment_method( self::resolve_gateway_id( $payment_method ) );
+        $order->set_payment_method_title( self::get_payment_title( $payment_method ) );
+        $order->save();
+
+        $payment_response = match ( $payment_method ) {
+            'credit_card' => Biju_MP_Processor::charge_card( $order, $card_payload ),
+            'pix'         => Biju_MP_Processor::charge_pix( $order ),
+            'billet'      => Biju_MP_Processor::charge_boleto( $order ),
+            default       => [ 'error' => 'unknown_payment_method', 'message' => "Forma de pagamento desconhecida: $payment_method" ],
+        };
+
+        // Recarrega para refletir o status atualizado pelo processador.
+        $order = wc_get_order( $order->get_id() );
+        $response = self::format_order( $order, true ); // dono já verificado acima
+        $response['payment'] = $payment_response;
+
+        return new WP_REST_Response( $response, 200 );
     }
 
     /**
@@ -862,12 +1057,22 @@ class Biju_Orders {
             'order'       => 'DESC',
         ] );
 
-        return new WP_REST_Response( array_map( [ __CLASS__, 'format_order' ], $orders ), 200 );
+        // include_private=true: são os pedidos do próprio usuário autenticado.
+        return new WP_REST_Response(
+            array_map( static fn ( WC_Order $o ) => self::format_order( $o, true ), $orders ),
+            200
+        );
     }
 
     // -------------------------------------------------------------------------
 
-    public static function format_order( WC_Order $order ): array {
+    /**
+     * @param bool $include_private Inclui dados sensíveis (CPF/CNPJ) no payload.
+     *                              Só deve ser true quando o requester é o dono
+     *                              verificado do pedido (ou admin) — nunca em
+     *                              rotas que servem pedidos de convidado por ID.
+     */
+    public static function format_order( WC_Order $order, bool $include_private = false ): array {
         $items = [];
         foreach ( $order->get_items() as $item ) {
             $product  = $item->get_product();
@@ -883,7 +1088,7 @@ class Biju_Orders {
             ];
         }
 
-        return [
+        $data = [
             'id'             => $order->get_id(),
             'status'         => $order->get_status(),
             'statusLabel'    => wc_get_order_status_name( $order->get_status() ),
@@ -905,6 +1110,15 @@ class Biju_Orders {
             'customerNote'   => $order->get_customer_note(),
             'payment'        => self::get_payment_for_pending_order( $order ),
         ];
+
+        // CPF/CNPJ só vai no payload para o dono verificado (usado pelo front
+        // para tokenizar o cartão em "Pagar agora"). Nunca em pedidos servidos
+        // por ID a convidados, para não vazar documento (LGPD).
+        if ( $include_private ) {
+            $data['cpf'] = preg_replace( '/\D/', '', (string) ( $order->get_meta( '_billing_cpf' ) ?: $order->get_meta( '_cpf' ) ?: '' ) );
+        }
+
+        return $data;
     }
 
     /**

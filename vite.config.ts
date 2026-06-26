@@ -18,6 +18,24 @@ export default defineConfig(({ mode }) => ({
     },
   },
   plugins: [react()],
+  build: {
+    // Navegadores modernos: evita o "JavaScript legado" (polyfills/transpile
+    // desnecessário) apontado pelo Lighthouse (~33 KiB).
+    target: "es2020",
+    cssCodeSplit: true,
+    rollupOptions: {
+      output: {
+        // Separa libs pesadas em chunks próprios para reduzir o bundle inicial
+        // que bloqueia a renderização e melhorar o cache entre deploys.
+        manualChunks: {
+          "react-vendor": ["react", "react-dom", "react-router-dom"],
+          "query": ["@tanstack/react-query"],
+          "carousel": ["embla-carousel-react", "embla-carousel-autoplay"],
+          "motion": ["framer-motion"],
+        },
+      },
+    },
+  },
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "./src"),

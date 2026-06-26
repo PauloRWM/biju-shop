@@ -19,5 +19,6 @@ export interface HomepageConfig {
 }
 
 export async function fetchHomepageConfig(): Promise<HomepageConfig> {
-  return api.get<HomepageConfig>('/homepage');
+  // Rota pública e cacheável — sem Authorization para liberar cache de CDN.
+  return api.getPublic<HomepageConfig>('/homepage');
 }

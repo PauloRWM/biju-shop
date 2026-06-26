@@ -122,6 +122,128 @@ class Biju_Abandoned_Cart {
     }
 
     /**
+     * GET /biju/v1/cart
+     * Requer autenticação (JWT). Devolve o carrinho salvo do usuário a partir de
+     * wc_abandoned_carts, com cada item HIDRATADO no formato Product que o front
+     * consome (preço, imagens, estoque, variações). Permite que o cliente recupere
+     * o carrinho ao logar em qualquer navegador.
+     *
+     * Resposta: { items: [ { product, quantity, variationId?, unitPrice? } ] }
+     * Itens cujo produto não existe mais / saiu de catálogo são omitidos.
+     */
+    public static function get_saved( WP_REST_Request $request ) {
+        $user_id = (int) Biju_Auth::get_user_from_request( $request );
+        if ( $user_id <= 0 ) {
+            return new WP_Error( 'unauthorized', 'Token inválido.', [ 'status' => 401 ] );
+        }
+
+        global $wpdb;
+        $table = self::table();
+        $row   = $wpdb->get_var( $wpdb->prepare(
+            "SELECT cart_data FROM {$table} WHERE user_id = %d LIMIT 1",
+            $user_id
+        ) );
+
+        if ( ! $row ) {
+            return rest_ensure_response( [ 'items' => [] ] );
+        }
+
+        return rest_ensure_response( [ 'items' => self::hydrate_cart_data( $row ) ] );
+    }
+
+    /**
+     * GET /biju/v1/cart/recover?token=XXX
+     *
+     * Público. Troca um token de recuperação (gerado no admin pelo botão
+     * "Enviar pro carrinho") pelos itens do carrinho daquele cliente, já
+     * hidratados no formato Product que o front consome. Não exige login —
+     * o token é o segredo. O front injeta os itens no carrinho e abre o drawer.
+     *
+     * Resposta: { items: [...], name?, found: bool }
+     */
+    public static function recover( WP_REST_Request $request ) {
+        $token = sanitize_text_field( (string) $request->get_param( 'token' ) );
+        if ( $token === '' ) {
+            return new WP_Error( 'missing_token', 'Token ausente.', [ 'status' => 400 ] );
+        }
+
+        // O token aponta para o id do carrinho (transient curto, single-use-ish).
+        $cart_id = (int) get_transient( 'biju_cart_recover_' . $token );
+        if ( ! $cart_id ) {
+            return new WP_Error( 'invalid_token', 'Link expirado ou inválido.', [ 'status' => 404 ] );
+        }
+
+        global $wpdb;
+        $table = self::table();
+        $row   = $wpdb->get_row( $wpdb->prepare(
+            "SELECT cart_data, name FROM {$table} WHERE id = %d LIMIT 1",
+            $cart_id
+        ) );
+
+        if ( ! $row ) {
+            return rest_ensure_response( [ 'items' => [], 'found' => false ] );
+        }
+
+        return rest_ensure_response( [
+            'items' => self::hydrate_cart_data( $row->cart_data ),
+            'name'  => $row->name ?: null,
+            'found' => true,
+        ] );
+    }
+
+    /**
+     * Hidrata o cart_data serializado para o array de itens no formato Product
+     * que o front consome. Compartilhado por get_saved (logado) e recover (token).
+     * Itens cujo produto não existe mais / saiu de catálogo são omitidos.
+     *
+     * @param string $cart_data conteúdo serializado da coluna cart_data.
+     * @return array<int,array>
+     */
+    private static function hydrate_cart_data( $cart_data ): array {
+        $stored = maybe_unserialize( $cart_data );
+        if ( ! is_array( $stored ) || empty( $stored ) ) {
+            return [];
+        }
+
+        $items = [];
+        foreach ( $stored as $entry ) {
+            $product_id   = isset( $entry['product_id'] ) ? absint( $entry['product_id'] ) : 0;
+            $variation_id = isset( $entry['variation_id'] ) ? absint( $entry['variation_id'] ) : 0;
+            $quantity     = isset( $entry['quantity'] ) ? max( 1, absint( $entry['quantity'] ) ) : 1;
+            if ( ! $product_id ) continue;
+
+            // Hidrata sempre pelo produto-PAI (o front espera o objeto Product do
+            // produto, com a variação referenciada por variationId à parte).
+            $product = wc_get_product( $product_id );
+            if ( ! $product || 'publish' !== $product->get_status() ) {
+                continue; // produto removido/despublicado: omite do carrinho
+            }
+
+            // 'full' garante que variações venham populadas (necessário para
+            // o front resolver preço/estoque da variação selecionada).
+            $formatted = Biju_Products::format_product( $product, 'full' );
+
+            // Preço unitário da linha: se houver variação, tenta o preço dela.
+            $unit_price = (float) $product->get_price();
+            if ( $variation_id ) {
+                $variation = wc_get_product( $variation_id );
+                if ( $variation ) {
+                    $unit_price = (float) $variation->get_price();
+                }
+            }
+
+            $items[] = [
+                'product'     => $formatted,
+                'quantity'    => $quantity,
+                'variationId' => $variation_id ?: null,
+                'unitPrice'   => $unit_price,
+            ];
+        }
+
+        return $items;
+    }
+
+    /**
      * DELETE /biju/v1/cart/save
      * Body opcional: { email?, phone? } — para guest poder limpar o próprio registro.
      */

@@ -91,6 +91,17 @@ class Biju_REST_API {
             ],
         ] );
 
+        // Pagar um pedido já criado que ficou aguardando pagamento (botão
+        // "Pagar agora" na conta). Regera PIX/cartão/boleto via Mercado Pago.
+        register_rest_route( $ns, '/orders/(?P<id>\d+)/pay', [
+            'methods'             => WP_REST_Server::CREATABLE,
+            'callback'            => [ 'Biju_Orders', 'pay_order' ],
+            'permission_callback' => '__return_true', // auth/ownership checada dentro do handler
+            'args'                => [
+                'id' => [ 'type' => 'integer', 'required' => true ],
+            ],
+        ] );
+
         // ---------------------------------------------------------------
         // Autenticação
         // ---------------------------------------------------------------
@@ -207,12 +218,31 @@ class Biju_REST_API {
         ] );
 
         // ---------------------------------------------------------------
-        // Carrinho (sincronização para rastreamento de abandono)
+        // Carrinho (sincronização para rastreamento de abandono +
+        // recuperação do carrinho salvo ao logar em outro navegador)
         // ---------------------------------------------------------------
         register_rest_route( $ns, '/cart', [
-            'methods'             => WP_REST_Server::CREATABLE,
-            'callback'            => [ __CLASS__, 'sync_cart' ],
-            'permission_callback' => [ 'Biju_Auth', 'require_auth' ],
+            [
+                'methods'             => WP_REST_Server::CREATABLE,
+                'callback'            => [ __CLASS__, 'sync_cart' ],
+                'permission_callback' => [ 'Biju_Auth', 'require_auth' ],
+            ],
+            [
+                'methods'             => WP_REST_Server::READABLE,
+                'callback'            => [ 'Biju_Abandoned_Cart', 'get_saved' ],
+                'permission_callback' => [ 'Biju_Auth', 'require_auth' ],
+            ],
+        ] );
+
+        // Recuperação de carrinho por token (link gerado no admin). Público:
+        // o token é o segredo; troca-o pelos itens hidratados do cliente.
+        register_rest_route( $ns, '/cart/recover', [
+            'methods'             => WP_REST_Server::READABLE,
+            'callback'            => [ 'Biju_Abandoned_Cart', 'recover' ],
+            'permission_callback' => '__return_true',
+            'args'                => [
+                'token' => [ 'required' => true, 'type' => 'string' ],
+            ],
         ] );
 
         // ---------------------------------------------------------------
@@ -402,7 +432,10 @@ class Biju_REST_API {
      * Config pública do Meta Pixel (somente Pixel ID, nunca o access token).
      */
     public static function meta_config(): WP_REST_Response {
-        return new WP_REST_Response( Biju_Meta_Pixel::get_public_config(), 200 );
+        $response = new WP_REST_Response( Biju_Meta_Pixel::get_public_config(), 200 );
+        // Config pública e quase estática — deixa browser/CDN cachearem.
+        $response->header( 'Cache-Control', 'public, max-age=300, s-maxage=600, stale-while-revalidate=600' );
+        return $response;
     }
 
     /**
@@ -442,10 +475,13 @@ class Biju_REST_API {
             $public_key = (string) get_option( '_mp_public_key', '' );
         }
 
-        return new WP_REST_Response( [
+        $response = new WP_REST_Response( [
             'mp_public_key' => $public_key ?: null,
             'mp_sandbox'    => $is_test,
         ], 200 );
+        // Public key do MP muda raríssimo — cacheável por browser/CDN.
+        $response->header( 'Cache-Control', 'public, max-age=300, s-maxage=600, stale-while-revalidate=600' );
+        return $response;
     }
 
     /**
@@ -590,7 +626,24 @@ class Biju_REST_API {
             ?: get_user_meta( $user_id, '_billing_cpf', true )
             ?: get_user_meta( $user_id, 'cpf', true );
 
-        if ( ! $cpf ) {
+        // Prefill persistido de uma resolução anterior (evita refazer wc_get_orders
+        // a cada chamada — o /account é chamado em todo load do front).
+        if ( empty( $billing['address_1'] ) ) {
+            $stored = get_user_meta( $user_id, 'biju_prefill_billing', true );
+            if ( is_array( $stored ) && ! empty( $stored['address_1'] ) ) {
+                $billing = array_merge( $billing, $stored );
+            }
+        }
+        if ( empty( $shipping['address_1'] ) ) {
+            $stored = get_user_meta( $user_id, 'biju_prefill_shipping', true );
+            if ( is_array( $stored ) && ! empty( $stored['address_1'] ) ) {
+                $shipping = array_merge( $shipping, $stored );
+            }
+        }
+
+        // Só consulta os pedidos se ainda faltar CPF ou endereço — e o resultado
+        // é persistido abaixo para que as próximas chamadas não paguem esse custo.
+        if ( ! $cpf || empty( $billing['address_1'] ) ) {
             // Fallback: pega do último pedido do cliente.
             $orders = wc_get_orders( [
                 'customer_id' => $user_id,
@@ -600,7 +653,9 @@ class Biju_REST_API {
             ] );
             if ( ! empty( $orders[0] ) ) {
                 $last_order = $orders[0];
-                $cpf = $last_order->get_meta( '_billing_cpf' ) ?: $last_order->get_meta( '_cpf' ) ?: '';
+                if ( ! $cpf ) {
+                    $cpf = $last_order->get_meta( '_billing_cpf' ) ?: $last_order->get_meta( '_cpf' ) ?: '';
+                }
                 // Se o endereço de billing/shipping do customer estiver vazio,
                 // herda do último pedido para pré-preencher o checkout.
                 if ( empty( $billing['address_1'] ) ) {
@@ -629,6 +684,18 @@ class Biju_REST_API {
                         'state'        => $last_order->get_shipping_state() ?: $last_order->get_billing_state(),
                         'postcode'     => $last_order->get_shipping_postcode() ?: $last_order->get_billing_postcode(),
                     ] );
+                }
+
+                // Persiste o resultado para as próximas chamadas lerem direto do
+                // user_meta, sem refazer a consulta de pedidos.
+                if ( $cpf ) {
+                    update_user_meta( $user_id, 'billing_cpf', $cpf );
+                }
+                if ( ! empty( $billing['address_1'] ) ) {
+                    update_user_meta( $user_id, 'biju_prefill_billing', $billing );
+                }
+                if ( ! empty( $shipping['address_1'] ) ) {
+                    update_user_meta( $user_id, 'biju_prefill_shipping', $shipping );
                 }
             }
         }

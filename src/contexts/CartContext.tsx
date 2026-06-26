@@ -1,6 +1,7 @@
-import React, { createContext, useContext, useState, useCallback, useEffect, useRef } from "react";
+import React, { createContext, useContext, useState, useCallback, useEffect, useRef, useMemo } from "react";
+import { toast } from "sonner";
 import { Product } from "@/data/products";
-import { saveAbandonedCart, clearAbandonedCart } from "@/services/abandonedCart";
+import { saveAbandonedCart, clearAbandonedCart, fetchSavedCart, recoverCart } from "@/services/abandonedCart";
 import { getAuthToken } from "@/services/api";
 
 export interface CartItem {
@@ -30,8 +31,16 @@ interface CartContextType {
   addItem: (
     product: Product,
     quantity?: number,
-    opts?: { variationId?: number; variationLabel?: string; unitPrice?: number },
-  ) => void;
+    opts?: {
+      variationId?: number;
+      variationLabel?: string;
+      unitPrice?: number;
+      // Estoque da variação selecionada (sobrepõe o do produto-pai).
+      inStock?: boolean;
+      maxStock?: number | null;
+    },
+    // Retorna false quando a adição foi bloqueada por falta de estoque.
+  ) => boolean;
   removeItem: (productId: string, variationId?: number) => void;
   updateQuantity: (productId: string, quantity: number, variationId?: number) => void;
   clearCart: (opts?: { keepAbandoned?: boolean }) => void;
@@ -97,20 +106,45 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children
     (
       product: Product,
       quantity: number = 1,
-      opts?: { variationId?: number; variationLabel?: string; unitPrice?: number },
-    ) => {
+      opts?: {
+        variationId?: number;
+        variationLabel?: string;
+        unitPrice?: number;
+        inStock?: boolean;
+        maxStock?: number | null;
+      },
+    ): boolean => {
       const qty = Math.max(1, Math.floor(quantity));
+
+      // Estoque efetivo: usa o da variação (opts) quando informado, senão o do produto.
+      const inStock = opts?.inStock ?? product.inStock;
+      const maxRaw = opts?.maxStock ?? product.stockQuantity;
       // Limite de estoque (null/undefined = não gerencia estoque = ilimitado).
       const max =
-        typeof product.stockQuantity === "number" && product.stockQuantity >= 0
-          ? product.stockQuantity
-          : Infinity;
+        typeof maxRaw === "number" && maxRaw >= 0 ? maxRaw : Infinity;
+
+      // Bloqueio: impede adicionar produto/variação sem estoque.
+      if (inStock === false || max <= 0) {
+        toast.error("Produto esgotado — não foi possível adicionar ao carrinho.");
+        return false;
+      }
+
+      // Já no máximo disponível? Avisa e não adiciona (decisão síncrona com o
+      // snapshot atual de items, antes do update funcional).
+      const existing = items.find(
+        (i) => i.product.id === product.id && (i.variationId ?? 0) === (opts?.variationId ?? 0),
+      );
+      if (existing && existing.quantity >= max) {
+        toast.error(`Você já atingiu o máximo disponível (${max} em estoque).`);
+        return false;
+      }
+
       setItems((prev) => {
-        const existing = prev.find(
+        const prevExisting = prev.find(
           (i) => i.product.id === product.id && (i.variationId ?? 0) === (opts?.variationId ?? 0),
         );
-        if (existing) {
-          const capped = Math.min(existing.quantity + qty, max);
+        if (prevExisting) {
+          const capped = Math.min(prevExisting.quantity + qty, max);
           return prev.map((i) =>
             i.product.id === product.id && (i.variationId ?? 0) === (opts?.variationId ?? 0)
               ? { ...i, quantity: capped }
@@ -128,8 +162,10 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children
           },
         ];
       });
+
+      return true;
     },
-    [],
+    [items],
   );
 
   const removeItem = useCallback((productId: string, variationId?: number) => {
@@ -245,16 +281,143 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children
     };
   }, [items, guestContact]);
 
+  // Recupera o carrinho salvo na conta ao logar e mescla com o carrinho local
+  // deste navegador. Regra de merge: mesma chave (product.id + variationId) →
+  // mantém a MAIOR quantidade; itens só no servidor são adicionados. Assim o
+  // cliente reencontra o carrinho em qualquer navegador sem perder o que já
+  // tinha aqui. Dispara no evento de login (biju:auth-change com token) e uma
+  // vez no mount se já houver sessão (login persistido entre recarregamentos).
+  useEffect(() => {
+    let cancelled = false;
+
+    const mergeFromAccount = async () => {
+      if (!getAuthToken()) return;
+      const saved = await fetchSavedCart();
+      if (cancelled || saved.length === 0) return;
+
+      setItems((prev) => {
+        const keyOf = (productId: string, variationId?: number | null) =>
+          `${productId}:${variationId ?? 0}`;
+
+        const merged = new Map<string, CartItem>();
+        for (const it of prev) {
+          merged.set(keyOf(it.product.id, it.variationId), it);
+        }
+
+        for (const s of saved) {
+          const key = keyOf(s.product.id, s.variationId ?? undefined);
+          const existing = merged.get(key);
+          if (existing) {
+            // Duplicata: mantém a maior quantidade (nada se perde).
+            if (s.quantity > existing.quantity) {
+              merged.set(key, { ...existing, quantity: s.quantity });
+            }
+          } else {
+            merged.set(key, {
+              product: s.product,
+              quantity: s.quantity,
+              variationId: s.variationId ?? undefined,
+              unitPrice: s.unitPrice,
+            });
+          }
+        }
+
+        return Array.from(merged.values());
+      });
+    };
+
+    // Tenta no mount (sessão já logada de um refresh).
+    void mergeFromAccount();
+
+    // E a cada login dentro da mesma aba.
+    const onAuthChange = (e: Event) => {
+      const detail = (e as CustomEvent<{ token: string | null }>).detail;
+      if (detail?.token) void mergeFromAccount();
+    };
+    window.addEventListener("biju:auth-change", onAuthChange);
+
+    return () => {
+      cancelled = true;
+      window.removeEventListener("biju:auth-change", onAuthChange);
+    };
+  }, []);
+
+  // Recuperação de carrinho por link (admin → "Enviar pro carrinho").
+  // Quando a URL traz ?recover_cart=TOKEN, troca o token pelos produtos no
+  // servidor, mescla no carrinho deste navegador (mesma regra: maior qtd) e
+  // abre o drawer. Depois limpa o parâmetro da URL para não reexecutar.
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const token = params.get("recover_cart");
+    if (!token) return;
+
+    let cancelled = false;
+
+    (async () => {
+      const recovered = await recoverCart(token);
+
+      // Remove o parâmetro da URL independentemente do resultado.
+      params.delete("recover_cart");
+      const qs = params.toString();
+      const newUrl = window.location.pathname + (qs ? `?${qs}` : "") + window.location.hash;
+      window.history.replaceState({}, "", newUrl);
+
+      if (cancelled || recovered.length === 0) {
+        if (!cancelled && recovered.length === 0) {
+          toast.error("Este link de carrinho expirou ou é inválido.");
+        }
+        return;
+      }
+
+      setItems((prev) => {
+        const keyOf = (productId: string, variationId?: number | null) =>
+          `${productId}:${variationId ?? 0}`;
+
+        const merged = new Map<string, CartItem>();
+        for (const it of prev) {
+          merged.set(keyOf(it.product.id, it.variationId), it);
+        }
+        for (const s of recovered) {
+          const key = keyOf(s.product.id, s.variationId ?? undefined);
+          const existing = merged.get(key);
+          if (existing) {
+            if (s.quantity > existing.quantity) {
+              merged.set(key, { ...existing, quantity: s.quantity });
+            }
+          } else {
+            merged.set(key, {
+              product: s.product,
+              quantity: s.quantity,
+              variationId: s.variationId ?? undefined,
+              unitPrice: s.unitPrice,
+            });
+          }
+        }
+        return Array.from(merged.values());
+      });
+
+      toast.success("Seus produtos voltaram pro carrinho!");
+      setIsOpen(true);
+    })();
+
+    return () => { cancelled = true; };
+  }, []);
+
   const totalItems = items.reduce((sum, i) => sum + i.quantity, 0);
   const totalPrice = items.reduce(
     (sum, i) => sum + (i.unitPrice ?? i.product.price) * i.quantity,
     0,
   );
 
+  // Memoiza o value para não recriar o objeto a cada render do provider, o que
+  // re-renderizaria todos os consumidores (Header, cards, drawer) sem necessidade.
+  const value = useMemo(
+    () => ({ items, addItem, removeItem, updateQuantity, clearCart, totalItems, totalPrice, isOpen, openCart, closeCart, coupon, setCoupon, guestContact, setGuestContact }),
+    [items, addItem, removeItem, updateQuantity, clearCart, totalItems, totalPrice, isOpen, openCart, closeCart, coupon, guestContact],
+  );
+
   return (
-    <CartContext.Provider
-      value={{ items, addItem, removeItem, updateQuantity, clearCart, totalItems, totalPrice, isOpen, openCart, closeCart, coupon, setCoupon, guestContact, setGuestContact }}
-    >
+    <CartContext.Provider value={value}>
       {children}
     </CartContext.Provider>
   );

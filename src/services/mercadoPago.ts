@@ -9,8 +9,30 @@ let configCache: PaymentConfig | null = null;
 
 async function getConfig(): Promise<PaymentConfig> {
   if (configCache) return configCache;
-  configCache = await api.get<PaymentConfig>("/payment-config");
+  // Public key do MP — rota pública e cacheável (sem Authorization).
+  configCache = await api.getPublic<PaymentConfig>("/payment-config");
   return configCache;
+}
+
+// Device fingerprint do Mercado Pago. O security.js calcula um
+// MP_DEVICE_SESSION_ID no navegador que, enviado na cobrança (header
+// X-meli-session-id), é o MAIOR fator isolado de aprovação de cartão e reduz
+// recusas cc_rejected_high_risk. Carregar cedo (no mount do checkout) dá tempo
+// do script computar o id antes do submit.
+export function initDeviceId(): void {
+  if (typeof window === "undefined") return;
+  if (document.getElementById("mp-security-js")) return;
+  const s = document.createElement("script");
+  s.id = "mp-security-js";
+  s.src = "https://www.mercadopago.com/v2/security.js";
+  s.setAttribute("view", "checkout");
+  s.async = true;
+  document.head.appendChild(s);
+}
+
+export function getDeviceId(): string | undefined {
+  if (typeof window === "undefined") return undefined;
+  return (window as any).MP_DEVICE_SESSION_ID || undefined;
 }
 
 async function loadMpSdk(): Promise<void> {
@@ -61,6 +83,7 @@ export interface CardTokenResult {
   expiration_year?: string;  // "YYYY"
   installments_amount?: number; // valor de cada parcela (com juros, se houver)
   total_paid_amount?: number;   // total cobrado (amount + juros)
+  device_id?: string;           // MP_DEVICE_SESSION_ID (antifraude/aprovação)
 }
 
 // Mapeamento de códigos de erro do Mercado Pago JS v2 → mensagens em PT-BR.
@@ -193,5 +216,6 @@ export async function tokenizeCard(
     expiration_year: input.cardExpirationYear,
     installments_amount,
     total_paid_amount,
+    device_id: getDeviceId(),
   };
 }

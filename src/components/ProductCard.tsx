@@ -1,8 +1,8 @@
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { ShoppingBag, Heart, Minus, Plus } from "lucide-react";
 import { Product } from "@/data/products";
 import { useCart } from "@/contexts/CartContext";
-import { useState } from "react";
+import { memo, useState } from "react";
 import { toast } from "sonner";
 import { trackAddToCart } from "@/services/metaPixel";
 import { useQueryClient } from "@tanstack/react-query";
@@ -16,9 +16,9 @@ interface Props {
 
 const ProductCard = ({ product, index = 0 }: Props) => {
   const { addItem, openCart, items, updateQuantity } = useCart();
+  const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [liked, setLiked] = useState(false);
-  const [imgLoaded, setImgLoaded] = useState(false);
   const [hovered, setHovered] = useState(false);
   const [qty, setQty] = useState(0);
   const [prefetched, setPrefetched] = useState(false);
@@ -78,13 +78,15 @@ const ProductCard = ({ product, index = 0 }: Props) => {
     }
     const newQty = Math.min(99, cartQty + 1);
     if (cartQty === 0) {
-      addItem(product, 1);
-      trackAddToCart({
-        productId: product.id,
-        name: product.name,
-        price: product.price,
-        quantity: 1,
-      });
+      const ok = addItem(product, 1);
+      if (ok) {
+        trackAddToCart({
+          productId: product.id,
+          name: product.name,
+          price: product.price,
+          quantity: 1,
+        });
+      }
     } else {
       updateQuantity(product.id, newQty);
     }
@@ -92,18 +94,16 @@ const ProductCard = ({ product, index = 0 }: Props) => {
 
   const handleAdd = (e: React.MouseEvent) => {
     stopLink(e);
-    // Produto com variações: redireciona para a página de detalhe
+    // Produto com variações: navega para a página de detalhe (sem reload da SPA)
+    // para escolher a variação.
     if (isVariable) {
-      if (qty <= 0) {
-        window.location.href = `/produto/${product.id}`;
-        return;
-      }
-      window.location.href = `/produto/${product.id}`;
+      navigate(`/produto/${product.id}`);
       return;
     }
     // Para produto simples, abre o carrinho. O +/- já adicionou.
     if (cartQty <= 0) {
-      addItem(product, 1);
+      const ok = addItem(product, 1);
+      if (!ok) return; // sem estoque — addItem já avisou
       trackAddToCart({
         productId: product.id,
         name: product.name,
@@ -124,28 +124,43 @@ const ProductCard = ({ product, index = 0 }: Props) => {
     >
       {/* Imagem — 4:5, troca de imagem no hover */}
       <div className="relative overflow-hidden rounded-xl bg-muted/30 mb-2.5 aspect-[4/5]">
+        {/* Placeholder de fundo: fica ATRÁS da imagem (z-0). Não depende de
+            onLoad do React — assim que o pixel da imagem é pintado, ele a cobre.
+            Antes, um overlay por cima só sumia no onLoad e podia ficar preso
+            quando a imagem vinha do cache (onLoad dispara antes do handler). */}
+        <div className="absolute inset-0 z-0 bg-gradient-to-br from-muted to-secondary" />
         <Link to={`/produto/${product.id}`} className="block w-full h-full">
-          {!imgLoaded && (
-            <div className="absolute inset-0 bg-gradient-to-br from-muted to-secondary animate-pulse" />
-          )}
-          {/* Imagem principal — exibida imediatamente assim que o navegador
-              renderiza o pixel. Sem fade nem espera de imgLoaded. */}
+          {/* Imagem principal — pintada imediatamente.
+              - decoding="sync": decodifica e mostra na hora (com async, o browser
+                baixava mas adiava a pintura → "imagem baixada mas não aparece").
+              - sizes ajustado ao tamanho REAL do card (~177px mobile / ~300px
+                desktop em grade de 4 col) para o browser escolher 360w em vez de 540w.
+              - os 4 primeiros cards (acima da dobra) não são lazy e têm prioridade
+                alta para acelerar o LCP; o resto continua lazy. */}
           <img
             src={product.images_thumb?.[0] ?? product.images[0]}
+            srcSet={product.images_srcset?.[0]}
+            sizes="(min-width: 1280px) 22vw, (min-width: 768px) 30vw, 48vw"
+            width={360}
+            height={450}
             alt={product.name}
-            className={`absolute inset-0 w-full h-full object-cover ${
+            className={`relative z-10 w-full h-full object-cover ${
               hovered && hasSecondImage ? "opacity-0" : "opacity-100"
             } transition-opacity duration-200`}
-            loading="lazy"
-            decoding="async"
-            onLoad={() => setImgLoaded(true)}
+            loading={index < 4 ? "eager" : "lazy"}
+            fetchPriority={index < 4 ? "high" : "auto"}
+            decoding="sync"
           />
           {/* Segunda imagem no hover */}
           {hasSecondImage && (
             <img
               src={product.images_thumb?.[1] ?? product.images[1]}
+              srcSet={product.images_srcset?.[1]}
+              sizes="(min-width: 1280px) 22vw, (min-width: 768px) 30vw, 48vw"
+              width={360}
+              height={450}
               alt={product.name}
-              className={`absolute inset-0 w-full h-full object-cover transition-opacity duration-200 ${
+              className={`absolute inset-0 z-10 w-full h-full object-cover transition-opacity duration-200 ${
                 hovered ? "opacity-100" : "opacity-0"
               }`}
               loading="lazy"
@@ -243,4 +258,5 @@ const ProductCard = ({ product, index = 0 }: Props) => {
   );
 };
 
-export default ProductCard;
+// memo: evita re-renderizar todos os cards da grade quando só o carrinho muda.
+export default memo(ProductCard);

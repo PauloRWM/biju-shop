@@ -1,6 +1,7 @@
 import { createRoot } from "react-dom/client";
 import App from "./App.tsx";
 import "./index.css";
+import { hideInitialLoader } from "./lib/initialLoader";
 
 // ────────────────────────────────────────────────────────────────────────────
 // Limpeza de Service Worker (modo kill switch permanente)
@@ -36,6 +37,10 @@ async function killServiceWorkers() {
 }
 
 createRoot(document.getElementById("root")!).render(<App />);
+
+// Rede de segurança final: se algo impedir o LoaderGate de rodar (erro fatal de
+// render), garante que o loader inicial não fique preso na tela.
+window.setTimeout(hideInitialLoader, 8000);
 
 if (typeof window !== "undefined") {
   // Dispara depois do load para não atrapalhar o paint inicial

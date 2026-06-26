@@ -73,7 +73,7 @@ class Biju_MP_Processor {
     // HTTP — chamada à API REST do MP
     // ---------------------------------------------------------------------
 
-    private static function http( string $method, string $path, array $body = [], string $idem_key = '' ): array {
+    private static function http( string $method, string $path, array $body = [], string $idem_key = '', array $extra_headers = [] ): array {
         $token = self::get_access_token();
         if ( ! $token ) {
             return [ 'ok' => false, 'http_code' => 0, 'data' => [], 'error' => 'access_token vazio (configure o plugin Mercado Pago)' ];
@@ -88,10 +88,22 @@ class Biju_MP_Processor {
         if ( $idem_key !== '' ) {
             $headers['X-Idempotency-Key'] = $idem_key;
         }
+        // Headers extras por chamada — ex.: X-meli-session-id (device fingerprint
+        // do MP) que melhora a aprovação e reduz cc_rejected_high_risk.
+        foreach ( $extra_headers as $hk => $hv ) {
+            if ( $hv !== '' && $hv !== null ) {
+                $headers[ $hk ] = $hv;
+            }
+        }
 
+        // Timeout: o SDK oficial do MP usa 5s como padrão. PIX/cartão/boleto
+        // respondem em 1-3s. 12s dá margem confortável para latência de rede
+        // server-to-server sem prender o cliente na tela do checkout — 30s só
+        // mascarava rede ruim e deixava o checkout "travado". O webhook
+        // (/biju/v1/mp-webhook) reconcilia qualquer pagamento que confirme depois.
         $args = [
             'method'  => strtoupper( $method ),
-            'timeout' => 30,
+            'timeout' => (int) apply_filters( 'biju_mp_http_timeout', 12 ),
             'headers' => $headers,
         ];
         if ( $method !== 'GET' && $body ) {
@@ -172,7 +184,17 @@ class Biju_MP_Processor {
             $body['issuer_id'] = (string) $card_payload['issuer_id'];
         }
 
-        return self::process_payment_response( $order, 'card', $body );
+        // additional_info: itens + telefone + endereço do pagador. O antifraude
+        // do MP usa esses dados para aprovar; sem eles a recusa
+        // cc_rejected_high_risk dispara. (Ver build_additional_info.)
+        $body['additional_info'] = self::build_additional_info( $order );
+
+        // device_id (MP_DEVICE_SESSION_ID capturado no front via security.js) vai
+        // no header X-meli-session-id — maior fator isolado de aprovação.
+        $device_id = isset( $card_payload['device_id'] ) ? (string) $card_payload['device_id'] : '';
+        $headers   = $device_id !== '' ? [ 'X-meli-session-id' => $device_id ] : [];
+
+        return self::process_payment_response( $order, 'card', $body, $headers );
     }
 
     /**
@@ -285,12 +307,23 @@ class Biju_MP_Processor {
     // Processamento da resposta — atualiza pedido conforme status do MP
     // ---------------------------------------------------------------------
 
-    private static function process_payment_response( WC_Order $order, string $kind, array $body ): array {
-        // Idempotency key inclui timestamp pra permitir nova tentativa após
-        // recusa (ex: cliente troca de cartão e tenta de novo no mesmo pedido).
-        // Sem timestamp, MP retornaria a recusa anterior em cache.
-        $idem_key = 'order-' . $order->get_id() . '-' . $kind . '-' . time();
-        $resp = self::http( 'POST', '/v1/payments', $body, $idem_key );
+    private static function process_payment_response( WC_Order $order, string $kind, array $body, array $extra_headers = [] ): array {
+        // Idempotency key estável DENTRO de uma mesma tentativa de pagamento.
+        // Usar time() (como antes) tornava cada clique uma chave nova — um
+        // duplo-clique no botão "pagar" podia gerar DUAS cobranças. Em vez disso
+        // mantemos um contador de tentativas no pedido: ele só incrementa quando
+        // há uma nova tentativa real (cliente troca o cartão e tenta de novo
+        // após recusa), o que mantém a proteção contra duplicidade do MP intacta
+        // e ainda permite o retry legítimo.
+        $attempt_meta = '_biju_mp_attempt_' . $kind;
+        $attempt      = (int) $order->get_meta( $attempt_meta );
+        if ( $attempt < 1 ) {
+            $attempt = 1;
+            $order->update_meta_data( $attempt_meta, $attempt );
+            $order->save();
+        }
+        $idem_key = 'order-' . $order->get_id() . '-' . $kind . '-' . $attempt;
+        $resp = self::http( 'POST', '/v1/payments', $body, $idem_key, $extra_headers );
         self::log( $order, "{$kind}_request", [ 'body' => self::mask_for_log( $body ) ] );
         self::log( $order, "{$kind}_response", $resp );
 
@@ -330,6 +363,11 @@ class Biju_MP_Processor {
                 break;
 
             case 'rejected':
+                // Incrementa o contador de tentativa para que um novo "pagar"
+                // (ex: cliente corrige o cartão) use uma idempotency-key nova e
+                // não receba a recusa anterior em cache do MP.
+                $order->update_meta_data( $attempt_meta, $attempt + 1 );
+                $order->save();
                 $order->update_status( 'failed', "MP recusou o pagamento. status_detail={$status_detail}" );
                 return [
                     'error'         => 'payment_rejected',
@@ -379,6 +417,60 @@ class Biju_MP_Processor {
     // ---------------------------------------------------------------------
     // Helpers
     // ---------------------------------------------------------------------
+
+    /**
+     * Monta o additional_info do pagamento (itens + dados do pagador) que o
+     * antifraude do Mercado Pago usa para aprovar. Quanto mais completo e real,
+     * menor a chance de cc_rejected_high_risk.
+     */
+    private static function build_additional_info( WC_Order $order ): array {
+        $items = [];
+        foreach ( $order->get_items() as $item ) {
+            if ( ! ( $item instanceof WC_Order_Item_Product ) ) {
+                continue;
+            }
+            $qty  = max( 1, (int) $item->get_quantity() );
+            $unit = round( (float) $item->get_total() / $qty, 2 );
+            $items[] = [
+                'id'          => (string) ( $item->get_product_id() ?: $item->get_id() ),
+                'title'       => mb_substr( (string) $item->get_name(), 0, 256 ),
+                'category_id' => 'fashion',
+                'quantity'    => $qty,
+                'unit_price'  => $unit,
+            ];
+        }
+
+        // Telefone BR → DDD (area_code) + número.
+        $phone = preg_replace( '/\D/', '', (string) $order->get_billing_phone() );
+        $area  = '';
+        $num   = $phone;
+        if ( strlen( (string) $phone ) >= 10 ) {
+            $area = substr( $phone, 0, 2 );
+            $num  = substr( $phone, 2 );
+        }
+
+        $payer = [
+            'first_name' => self::sanitize_payer_name( $order->get_billing_first_name(), '' ),
+            'last_name'  => self::sanitize_payer_name( $order->get_billing_last_name(), '' ),
+        ];
+        $phone_arr = array_filter( [ 'area_code' => $area, 'number' => $num ] );
+        if ( $phone_arr ) {
+            $payer['phone'] = $phone_arr;
+        }
+        $address = array_filter( [
+            'zip_code'      => preg_replace( '/\D/', '', (string) $order->get_billing_postcode() ),
+            'street_name'   => (string) $order->get_billing_address_1(),
+            'street_number' => (string) ( $order->get_meta( '_billing_number' ) ?: '' ),
+        ] );
+        if ( $address ) {
+            $payer['address'] = $address;
+        }
+
+        return array_filter( [
+            'items' => $items,
+            'payer' => array_filter( $payer ),
+        ] );
+    }
 
     private static function get_cpf_from_order( WC_Order $order ): string {
         $cpf = $order->get_meta( '_billing_cpf' ) ?: $order->get_meta( '_cpf' ) ?: '';

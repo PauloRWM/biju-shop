@@ -3,7 +3,9 @@ import { useSearchParams } from "react-router-dom";
 import Layout from "@/components/layout/Layout";
 import ProductCard from "@/components/ProductCard";
 import LoadingSpinner from "@/components/LoadingSpinner";
+import CategorySidebar from "@/components/CategorySidebar";
 import { useInfiniteProducts, useCategories } from "@/hooks/useProducts";
+import type { ProductsParams } from "@/services/products";
 import { Button } from "@/components/ui/button";
 import { products as fallbackProducts, categories as fallbackCategories } from "@/data/products";
 import { ChevronDown, SlidersHorizontal, X, Search } from "lucide-react";
@@ -66,7 +68,12 @@ const Shop = () => {
     if (queryParam) window.scrollTo({ top: 0 });
   }, [queryParam]);
 
-  const [orderby, order] = sortBy.value.split("-") as [string, string];
+  // sortBy.value sempre vem de SORT_OPTIONS (valores controlados), então o cast
+  // para os tipos da API é seguro.
+  const [orderby, order] = sortBy.value.split("-") as [
+    NonNullable<ProductsParams["orderby"]>,
+    NonNullable<ProductsParams["order"]>,
+  ];
 
   const {
     data: productsPages,
@@ -79,8 +86,8 @@ const Shop = () => {
     category: activeCategory !== "Todos" ? activeCategory : undefined,
     search: queryParam || undefined,
     per_page: 60,
-    orderby: orderby as any,
-    order: order as any,
+    orderby,
+    order,
   });
   const { data: apiCategories } = useCategories();
 
@@ -135,35 +142,11 @@ const Shop = () => {
 
   // ── Sidebar: apenas categorias ──
   const SidebarCategories = () => (
-    <div>
-      <h3 className="text-xs font-sans font-bold uppercase tracking-[0.12em] text-foreground mb-3">
-        Categorias
-      </h3>
-      <ul className="space-y-0.5">
-        {allCategories.map((cat) => {
-          const isActive = activeCategory === cat.name;
-          return (
-            <li key={cat.name}>
-              <button
-                onClick={() => { handleCategory(cat.name); setMobileSidebar(false); }}
-                className={`w-full text-left px-3 py-2 rounded-lg text-sm font-sans transition-all duration-150 flex items-center justify-between ${
-                  isActive
-                    ? "bg-foreground text-background font-semibold"
-                    : "text-foreground/70 hover:bg-muted/60 hover:text-foreground"
-                }`}
-              >
-                <span className="truncate">{cat.name}</span>
-                {cat.count > 0 && (
-                  <span className={`text-[10px] tabular-nums ${isActive ? "text-background/60" : "text-muted-foreground"}`}>
-                    {cat.count}
-                  </span>
-                )}
-              </button>
-            </li>
-          );
-        })}
-      </ul>
-    </div>
+    <CategorySidebar
+      categories={allCategories}
+      activeCategory={activeCategory}
+      onSelect={(name) => { handleCategory(name); setMobileSidebar(false); }}
+    />
   );
 
   return (

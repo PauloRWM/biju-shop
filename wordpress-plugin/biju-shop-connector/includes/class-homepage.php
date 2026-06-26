@@ -13,44 +13,64 @@ class Biju_Homepage {
     // -------------------------------------------------------------------------
 
     public static function get_config( WP_REST_Request $request ): WP_REST_Response {
-        $menu     = self::get_menu_items();
-        $sections = get_option( 'biju_homepage_sections', self::default_sections() );
+        // A homepage muda raramente (config de admin + categorias). Cacheia o
+        // payload inteiro; antes recomputava menu, termos e uma query de
+        // popularidade por seção a cada request.
+        $payload = Biju_Cache::remember( 'homepage', 15 * MINUTE_IN_SECONDS, function () {
+            $menu     = self::get_menu_items();
+            $sections = get_option( 'biju_homepage_sections', self::default_sections() );
 
-        $enriched = [];
-        foreach ( $sections as $s ) {
-            $term = get_term_by( 'slug', $s['slug'], 'product_cat' );
-            if ( ! $term instanceof WP_Term ) continue;
+            $enriched = [];
+            foreach ( $sections as $s ) {
+                $term = get_term_by( 'slug', $s['slug'], 'product_cat' );
+                if ( ! $term instanceof WP_Term ) continue;
 
-            // Imagem: tenta thumbnail da categoria, senão pega do produto mais vendido
-            $thumb_id  = get_term_meta( $term->term_id, 'thumbnail_id', true );
-            $thumb_url = $thumb_id ? wp_get_attachment_url( $thumb_id ) : null;
-
-            if ( ! $thumb_url ) {
-                $top = wc_get_products( [
-                    'status'   => 'publish',
-                    'limit'    => 1,
-                    'orderby'  => 'popularity',
-                    'order'    => 'DESC',
-                    'category' => [ $term->slug ],
-                ] );
-                if ( ! empty( $top ) ) {
-                    $img_id    = $top[0]->get_image_id();
-                    $thumb_url = $img_id ? wp_get_attachment_url( $img_id ) : null;
+                // Imagem: tenta thumbnail da categoria, senão pega do produto mais vendido.
+                // IMPORTANTE: usa o tamanho 'woocommerce_thumbnail' (~300px) e NÃO
+                // wp_get_attachment_url() — esta última devolvia a imagem ORIGINAL
+                // (768x1024+, ~950 KB), pesando o payload e o card de categoria que
+                // é exibido a apenas ~120px.
+                $thumb_id  = get_term_meta( $term->term_id, 'thumbnail_id', true );
+                $thumb_url = null;
+                if ( $thumb_id ) {
+                    $src = wp_get_attachment_image_src( (int) $thumb_id, 'woocommerce_thumbnail' );
+                    $thumb_url = $src ? $src[0] : null;
                 }
+
+                if ( ! $thumb_url ) {
+                    $top = wc_get_products( [
+                        'status'   => 'publish',
+                        'limit'    => 1,
+                        'orderby'  => 'popularity',
+                        'order'    => 'DESC',
+                        'category' => [ $term->slug ],
+                    ] );
+                    if ( ! empty( $top ) ) {
+                        $img_id = $top[0]->get_image_id();
+                        if ( $img_id ) {
+                            $src = wp_get_attachment_image_src( (int) $img_id, 'woocommerce_thumbnail' );
+                            $thumb_url = $src ? $src[0] : null;
+                        }
+                    }
+                }
+
+                $enriched[] = [
+                    'name'  => $term->name,
+                    'slug'  => $term->slug,
+                    'count' => (int) $term->count,
+                    'image' => $thumb_url,
+                ];
             }
 
-            $enriched[] = [
-                'name'  => $term->name,
-                'slug'  => $term->slug,
-                'count' => (int) $term->count,
-                'image' => $thumb_url,
+            return [
+                'menu'     => $menu,
+                'sections' => $enriched,
             ];
-        }
+        } );
 
-        return new WP_REST_Response( [
-            'menu'     => $menu,
-            'sections' => $enriched,
-        ], 200 );
+        $response = new WP_REST_Response( $payload, 200 );
+        $response->header( 'Cache-Control', 'public, max-age=60, s-maxage=300, stale-while-revalidate=600' );
+        return $response;
     }
 
     // -------------------------------------------------------------------------

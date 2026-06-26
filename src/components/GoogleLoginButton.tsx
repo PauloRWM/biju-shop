@@ -93,7 +93,10 @@ const GoogleLoginButton = ({ onSuccess, text = "continue_with", disabled }: Prop
         const config = await fetchGoogleConfig();
         if (cancelled) return;
 
-        if (!config.enabled || !config.client_id) {
+        // Basta o client_id para renderizar o botão oficial. Não bloqueamos no
+        // flag `enabled` do backend — assim o botão de login sempre aparece
+        // (ex: no checkout) e não fica refém de uma resposta de status.
+        if (!config.client_id) {
           setLoadError("Configuração ausente");
           return;
         }

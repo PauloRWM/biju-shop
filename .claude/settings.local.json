@@ -31,7 +31,10 @@
       "Bash(node -e ' *)",
       "Bash(npm i *)",
       "Bash(yarn add *)",
-      "Bash(taskkill /F /IM node.exe)"
+      "Bash(taskkill /F /IM node.exe)",
+      "Bash(npm install *)",
+      "Bash(npx eslint *)",
+      "Bash(curl *)"
     ]
   }
 }

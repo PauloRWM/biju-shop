@@ -25,7 +25,7 @@ import {
 import { validateCoupon } from "@/services/coupons";
 import { motion, AnimatePresence } from "framer-motion";
 import { toast } from "sonner";
-import { getAuthToken } from "@/services/api";
+import { getAuthToken, ApiError } from "@/services/api";
 import { fetchAccount } from "@/services/auth";
 import GoogleLoginButton from "@/components/GoogleLoginButton";
 import { calculateShippingViaWoo, ShippingMethod } from "@/services/shipping";
@@ -137,7 +137,12 @@ const Checkout = () => {
     !!s && ["processing", "completed"].includes(s);
   const { data: polledOrder } = useOrder(
     step === "success" && paymentMethod === "pix" && orderId ? orderId : undefined,
-    { refetchInterval: 4000 }, // checa a cada 4s
+    {
+      // Checa a cada 4s, mas PARA assim que o pedido for pago — evita polling
+      // infinito no endpoint /order/:id depois da confirmação.
+      refetchInterval: (query) =>
+        isPaidStatus(query.state.data?.status) ? false : 4000,
+    },
   );
   const pixConfirmed = paymentMethod === "pix" && isPaidStatus(polledOrder?.status);
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => !!getAuthToken());
@@ -195,6 +200,7 @@ const Checkout = () => {
 
   // Sincroniza identificadores do guest com o CartContext (para carrinho abandonado).
   // Debounce de 800ms para esperar o usuário terminar de digitar.
+  // O sync para o servidor tem outro debounce de 3s no CartContext.
   useEffect(() => {
     const t = setTimeout(() => {
       const email = form.email.trim();
@@ -205,7 +211,7 @@ const Checkout = () => {
         phone: phoneDigits || undefined,
         name: name || undefined,
       });
-    }, 3000);
+    }, 800);
     return () => clearTimeout(t);
   }, [form.email, form.phone, form.firstName, form.lastName, setGuestContact]);
 
@@ -271,18 +277,28 @@ const Checkout = () => {
       return;
     }
     let cancelled = false;
-    calculateShippingViaWoo(
-      clean,
-      items.map((it) => ({
-        product_id: Number(it.product.id),
-        quantity: it.quantity,
-        ...(it.variationId ? { variation_id: it.variationId } : {}),
-      })),
-      totalPrice,
-    ).then((opts) => {
-      if (!cancelled) setShippingMethods(opts);
-    });
-    return () => { cancelled = true; };
+    // Debounce: evita recalcular o frete a cada clique em +/- na quantidade.
+    const t = setTimeout(() => {
+      calculateShippingViaWoo(
+        clean,
+        items.map((it) => ({
+          product_id: Number(it.product.id),
+          quantity: it.quantity,
+          ...(it.variationId ? { variation_id: it.variationId } : {}),
+        })),
+        totalPrice,
+      )
+        .then((opts) => {
+          if (!cancelled) setShippingMethods(opts);
+        })
+        .catch((err) => {
+          if (cancelled) return;
+          setShippingMethods([]);
+          console.error("Falha ao calcular frete:", err);
+          toast.error("Não foi possível calcular o frete agora. Verifique o CEP ou tente novamente.");
+        });
+    }, 500);
+    return () => { cancelled = true; clearTimeout(t); };
   }, [form.postcode, totalPrice, items]);
 
   const selectedShipping = shippingMethods.find((m) => m.id === selectedShippingId) ?? shippingMethods[0];
@@ -369,22 +385,35 @@ const Checkout = () => {
   const set = (field: string) => (e: React.ChangeEvent<HTMLInputElement>) =>
     setForm((prev) => ({ ...prev, [field]: e.target.value }));
 
+  // Guarda o último CEP solicitado para descartar respostas fora de ordem:
+  // sem isso, uma busca lenta de um CEP antigo poderia sobrescrever o endereço
+  // de um CEP digitado depois.
+  const cepRequestRef = useRef<string>("");
+
+  // fetch com timeout para não pendurar a UI em rede lenta.
+  const fetchWithTimeout = (url: string, timeoutMs = 8000) =>
+    fetch(url, { signal: AbortSignal.timeout(timeoutMs) });
+
   // Buscar CEP automaticamente
   const fetchAddress = async (cep: string) => {
     const cleanCep = cep.replace(/\D/g, "");
     if (cleanCep.length !== 8) return;
 
+    cepRequestRef.current = cleanCep;
+    // Só aplica o resultado se este ainda for o CEP mais recente solicitado.
+    const isStale = () => cepRequestRef.current !== cleanCep;
+
     setLoadingCep(true);
     try {
       // Tentar ViaCEP primeiro
-      let response = await fetch(`https://viacep.com.br/ws/${cleanCep}/json/`);
+      let response = await fetchWithTimeout(`https://viacep.com.br/ws/${cleanCep}/json/`);
       let data = await response.json();
 
       // Se ViaCEP falhar, tentar API alternativa (BrasilAPI)
       if (data.erro) {
-        response = await fetch(`https://brasilapi.com.br/api/cep/v1/${cleanCep}`);
+        response = await fetchWithTimeout(`https://brasilapi.com.br/api/cep/v1/${cleanCep}`);
         data = await response.json();
-        
+
         // Mapear resposta da BrasilAPI para formato ViaCEP
         data = {
           logradouro: data.street,
@@ -393,6 +422,8 @@ const Checkout = () => {
           uf: data.state,
         };
       }
+
+      if (isStale()) return;
 
       if (!data.erro) {
         setForm((prev) => ({
@@ -409,9 +440,11 @@ const Checkout = () => {
     } catch (error) {
       // Tentar última alternativa: API dos Correios (via proxy)
       try {
-        const response = await fetch(`https://cdn.apicep.com/file/apicep/${cleanCep}.json`);
+        const response = await fetchWithTimeout(`https://cdn.apicep.com/file/apicep/${cleanCep}.json`);
         const data = await response.json();
-        
+
+        if (isStale()) return;
+
         setForm((prev) => ({
           ...prev,
           address: data.address || "",
@@ -421,10 +454,10 @@ const Checkout = () => {
         }));
         toast.success("Endereço encontrado!");
       } catch {
-        toast.error("Erro ao buscar CEP. Digite manualmente.");
+        if (!isStale()) toast.error("Erro ao buscar CEP. Digite manualmente.");
       }
     } finally {
-      setLoadingCep(false);
+      if (!isStale()) setLoadingCep(false);
     }
   };
 
@@ -532,6 +565,12 @@ const Checkout = () => {
     }
   }, [items.length, step, navigate]);
 
+  // Carrega o device fingerprint do Mercado Pago cedo, para o
+  // MP_DEVICE_SESSION_ID estar pronto na hora de tokenizar/cobrar o cartão.
+  useEffect(() => {
+    import("@/services/mercadoPago").then((m) => m.initDeviceId()).catch(() => {});
+  }, []);
+
   if (items.length === 0 && step !== "success") {
     return null;
   }
@@ -542,14 +581,18 @@ const Checkout = () => {
       pix: "pix", boleto: "billet", credit: "credit_card",
     };
 
+    // WhatsApp (obrigatório) — validado antes do e-mail, refletindo a ordem do form.
+    if (!form.phone.trim()) {
+      toast.error("WhatsApp é obrigatório para finalizar a compra.");
+      return;
+    }
+    if (!isValidPhone(form.phone)) {
+      toast.error("WhatsApp inválido. Use formato (00) 00000-0000.");
+      return;
+    }
     // E-mail
     if (!isValidEmail(form.email)) {
       toast.error("E-mail inválido. Confira o endereço digitado.");
-      return;
-    }
-    // Telefone
-    if (!isValidPhone(form.phone)) {
-      toast.error("Telefone inválido. Use formato (00) 00000-0000.");
       return;
     }
     // CPF/CNPJ obrigatório (cartão, PIX, boleto) — exigido pelo Mercado Pago
@@ -730,8 +773,15 @@ const Checkout = () => {
       requestAnimationFrame(() => {
         window.scrollTo({ top: 0, behavior: "auto" });
       });
-    } catch {
-      toast.error("Erro ao finalizar pedido. Tente novamente.");
+    } catch (err) {
+      console.error("Falha ao finalizar pedido:", err);
+      // Só exibe a mensagem do servidor (ApiError já vem traduzida/amigável).
+      // Outros erros de JS mostram mensagem genérica para não vazar detalhes técnicos.
+      const msg =
+        err instanceof ApiError && err.message
+          ? err.message
+          : "Erro ao finalizar pedido. Tente novamente.";
+      toast.error(msg);
     }
   };
 
@@ -870,50 +920,59 @@ const Checkout = () => {
                       Dados de Contato
                     </h2>
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                      <Input placeholder="Nome" value={form.firstName} onChange={set("firstName")} required />
-                      <Input placeholder="Sobrenome" value={form.lastName} onChange={set("lastName")} required />
+                      <Input aria-label="Nome" placeholder="Nome" value={form.firstName} onChange={set("firstName")} required />
+                      <Input aria-label="Sobrenome" placeholder="Sobrenome" value={form.lastName} onChange={set("lastName")} required />
                     </div>
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                       <div className="space-y-1">
                         <Input
-                          type="email"
-                          placeholder="E-mail"
-                          value={form.email}
-                          onChange={set("email")}
-                          required
-                          className={form.email && !isValidEmail(form.email) ? "border-destructive focus-visible:ring-destructive/30" : ""}
-                        />
-                        {form.email && !isValidEmail(form.email) && (
-                          <p className="text-xs text-destructive pl-1">E-mail inválido.</p>
-                        )}
-                      </div>
-                      <div className="space-y-1">
-                        <Input
                           type="tel"
-                          placeholder="Telefone (WhatsApp)"
+                          aria-label="WhatsApp"
+                          placeholder="WhatsApp"
                           value={form.phone}
                           onChange={handlePhoneChange}
                           maxLength={15}
                           required
+                          aria-invalid={!!form.phone && !isValidPhone(form.phone)}
+                          aria-describedby={form.phone && !isValidPhone(form.phone) ? "err-phone" : undefined}
                           className={form.phone && !isValidPhone(form.phone) ? "border-destructive focus-visible:ring-destructive/30" : ""}
                         />
                         {form.phone && !isValidPhone(form.phone) && (
-                          <p className="text-xs text-destructive pl-1">Telefone incompleto.</p>
+                          <p id="err-phone" role="alert" className="text-xs text-destructive pl-1">WhatsApp incompleto.</p>
+                        )}
+                      </div>
+                      <div className="space-y-1">
+                        <Input
+                          type="email"
+                          aria-label="E-mail"
+                          placeholder="E-mail"
+                          value={form.email}
+                          onChange={set("email")}
+                          required
+                          aria-invalid={!!form.email && !isValidEmail(form.email)}
+                          aria-describedby={form.email && !isValidEmail(form.email) ? "err-email" : undefined}
+                          className={form.email && !isValidEmail(form.email) ? "border-destructive focus-visible:ring-destructive/30" : ""}
+                        />
+                        {form.email && !isValidEmail(form.email) && (
+                          <p id="err-email" role="alert" className="text-xs text-destructive pl-1">E-mail inválido.</p>
                         )}
                       </div>
                     </div>
                     <div className="space-y-1">
                       <Input
+                        aria-label="CPF ou CNPJ"
                         placeholder="CPF ou CNPJ"
                         value={form.cpf}
                         onChange={handleCpfChange}
                         maxLength={18}
                         inputMode="numeric"
                         required
+                        aria-invalid={!!form.cpf && !isValidCpfOrCnpj(form.cpf)}
+                        aria-describedby={form.cpf && !isValidCpfOrCnpj(form.cpf) ? "err-cpf" : undefined}
                         className={form.cpf && !isValidCpfOrCnpj(form.cpf) ? "border-destructive focus-visible:ring-destructive/30" : ""}
                       />
                       {form.cpf && !isValidCpfOrCnpj(form.cpf) && (
-                        <p className="text-xs text-destructive pl-1">CPF ou CNPJ inválido.</p>
+                        <p id="err-cpf" role="alert" className="text-xs text-destructive pl-1">CPF ou CNPJ inválido.</p>
                       )}
                     </div>
 
@@ -969,13 +1028,15 @@ const Checkout = () => {
                       Endereço de Entrega
                     </h2>
                     <div className="grid grid-cols-3 gap-3">
-                      <Input 
-                        placeholder="CEP" 
-                        value={form.postcode} 
+                      <Input
+                        aria-label="CEP"
+                        placeholder="CEP"
+                        value={form.postcode}
                         onChange={handleCepChange}
                         maxLength={9}
+                        inputMode="numeric"
                         disabled={loadingCep}
-                        required 
+                        required
                       />
                       <div className="col-span-2 flex items-center">
                         {loadingCep && (
@@ -987,6 +1048,7 @@ const Checkout = () => {
                     </div>
                     <div className="grid grid-cols-4 gap-3">
                       <Input
+                        aria-label="Rua"
                         placeholder="Rua"
                         className="col-span-3"
                         value={form.address}
@@ -995,21 +1057,24 @@ const Checkout = () => {
                       />
                       <div className="space-y-1">
                         <Input
+                          aria-label="Número"
                           placeholder="Nº"
                           value={form.number}
                           onChange={set("number")}
                           required
+                          aria-invalid={!!form.number && !isValidAddressNumber(form.number)}
+                          aria-describedby={form.number && !isValidAddressNumber(form.number) ? "err-number" : undefined}
                           className={form.number && !isValidAddressNumber(form.number) ? "border-destructive focus-visible:ring-destructive/30" : ""}
                         />
                         {form.number && !isValidAddressNumber(form.number) && (
-                          <p className="text-xs text-destructive pl-1">Use número ou S/N.</p>
+                          <p id="err-number" role="alert" className="text-xs text-destructive pl-1">Use número ou S/N.</p>
                         )}
                       </div>
                     </div>
-                    <Input placeholder="Complemento (opcional)" value={form.complement} onChange={set("complement")} />
+                    <Input aria-label="Complemento (opcional)" placeholder="Complemento (opcional)" value={form.complement} onChange={set("complement")} />
                     <div className="grid grid-cols-3 gap-3">
-                      <Input placeholder="Bairro" value={form.neighborhood} onChange={set("neighborhood")} required />
-                      <Input placeholder="Cidade" value={form.city} onChange={set("city")} required />
+                      <Input aria-label="Bairro" placeholder="Bairro" value={form.neighborhood} onChange={set("neighborhood")} required />
+                      <Input aria-label="Cidade" placeholder="Cidade" value={form.city} onChange={set("city")} required />
                       <select
                         value={form.state}
                         onChange={(e) => setForm((prev) => ({ ...prev, state: e.target.value }))}
@@ -1466,7 +1531,7 @@ const Checkout = () => {
               </div>
 
               {paymentMethod === "pix" && paymentDetails?.qr_code_base64 && !pixConfirmed && (
-                <div className="max-w-sm mx-auto border-2 border-pix/30 bg-pix/5 rounded-xl p-5 mb-8 space-y-4">
+                <div className="sticky top-24 z-30 max-w-sm mx-auto border-2 border-pix/30 bg-background/95 backdrop-blur shadow-lg rounded-xl p-5 mb-8 space-y-4">
                   <div className="flex items-center gap-2 justify-center text-pix font-semibold">
                     <QrCode className="h-5 w-5" />
                     <span>Pague com PIX</span>

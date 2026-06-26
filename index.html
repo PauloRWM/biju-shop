@@ -11,10 +11,22 @@
   <meta name="twitter:title" content="Wesley Bijoux">
   <meta property="og:description" content="Acessorios e bijuterias de qualidade">
   <meta name="twitter:description" content="Acessorios e bijuterias de qualidade">
+
+  <!-- Preconnect ao WordPress (origem das imagens de produto) para abrir a
+       conexão TLS antes do React pedir o JSON + imagens. -->
+  <link rel="preconnect" href="https://wesleybijoux.com.br" crossorigin />
+
+  <!-- Preload do banner LCP: o navegador baixa a primeira imagem do carrossel
+       antes do React montar, melhorando LCP / Speed Index. -->
+  <link rel="preload" as="image" href="/banners/IMG_9425.webp" fetchpriority="high" />
   <style>
     #initial-loader {
       position: fixed; inset: 0; display: flex; align-items: center; justify-content: center;
       background: #faf7f2; z-index: 9999;
+      transition: opacity 0.35s ease;
+    }
+    #initial-loader.biju-loader-hidden {
+      opacity: 0; pointer-events: none;
     }
     #initial-loader img {
       width: 96px; height: 96px; object-fit: contain;
@@ -32,10 +44,11 @@
     <script>
       (function(){var r=sessionStorage.redirect;delete sessionStorage.redirect;if(r&&r!==location.href){history.replaceState(null,null,r);}})();
     </script>
-    <div id="root">
-      <div id="initial-loader">
-        <img src="/logo.png" alt="Wesley Bijoux" />
-      </div>
+    <div id="root"></div>
+    <!-- Loader fora do #root: assim o React não o remove ao montar.
+         É escondido por hideInitialLoader() quando os dados iniciais carregam. -->
+    <div id="initial-loader">
+      <img src="/logo.png" alt="Wesley Bijoux" />
     </div>
     <script type="module" src="/src/main.tsx"></script>
   </body>

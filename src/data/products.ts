@@ -27,6 +27,7 @@ export interface Product {
   category: string;
   images: string[];
   images_thumb?: string[];
+  images_srcset?: string[]; // srcset "url 360w, url 540w" por imagem (card)
   has_image?: boolean;
   badge?: string;
   rating: number;

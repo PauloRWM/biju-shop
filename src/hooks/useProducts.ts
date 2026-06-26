@@ -2,13 +2,14 @@ import { useQuery, keepPreviousData, useInfiniteQuery } from '@tanstack/react-qu
 import { fetchProducts, fetchProduct, fetchCategories, type ProductsParams } from '@/services/products';
 import { fetchHomepageConfig } from '@/services/homepage';
 
-export function useProducts(params: ProductsParams = {}) {
+export function useProducts(params: ProductsParams = {}, opts?: { enabled?: boolean }) {
   return useQuery({
     queryKey: ['products', params],
     queryFn: () => fetchProducts(params),
     placeholderData: keepPreviousData,
     staleTime: 60_000,
     retry: false,
+    enabled: opts?.enabled ?? true,
   });
 }
 

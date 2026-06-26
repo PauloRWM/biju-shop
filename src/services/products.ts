@@ -50,9 +50,14 @@ function buildProductsUrl(params: ProductsParams): string {
 }
 
 export async function fetchProduct(id: string): Promise<Product> {
-  return api.get<Product>(`/products/${id}`);
+  // Rota pública e cacheável — sem Authorization para liberar cache de CDN.
+  return api.getPublic<Product>(`/products/${id}`);
 }
 
 export async function fetchCategories(): Promise<Category[]> {
-  return api.get<Category[]>('/categories');
+  // Defensivo: se o WP serializar a lista como objeto ({"0":...,"1":...}) por
+  // causa de chaves não-sequenciais, normaliza para array. Sem isso, o
+  // Array.isArray() nos consumidores descarta a resposta e cai no fallback.
+  const data = await api.getPublic<Category[] | Record<string, Category>>('/categories');
+  return Array.isArray(data) ? data : Object.values(data ?? {});
 }
