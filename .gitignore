@@ -26,3 +26,11 @@ dist-ssr
 # WordPress backups (arquivos enormes, não versionar)
 wp-backups/
 *.wpress
+
+# Backups pontuais de arquivos do plugin (gerados antes de deploys)
+*.bak-*
+*.bak-deploy
+
+# Artefatos de debug/automação (não versionar)
+.playwright-mcp/
+conta-logado-hidratado.png
