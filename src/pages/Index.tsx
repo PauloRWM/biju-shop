@@ -76,10 +76,13 @@ const Index = () => {
   const { data: homepageConfig } = useHomepageConfig();
   const { data: allCategories } = useCategories();
 
-  // Todas as categorias com produtos ativos (exclui meta-categorias)
+  // Todas as categorias com produtos ativos (exclui meta-categorias que
+  // duplicam o catálogo inteiro: "Todos Produtos" e "Lançamentos" — esta última
+  // tem ~170 itens repetidos das demais, então não vira seção própria na home).
   const catArray = Array.isArray(allCategories) ? allCategories : [];
+  const excludedSlugs = ['todos-produtos', 'uncategorized', 'lancamentos'];
   const sections = catArray.length > 0
-    ? catArray.filter(cat => cat.count > 0 && cat.slug !== 'todos-produtos' && cat.slug !== 'uncategorized')
+    ? catArray.filter(cat => cat.count > 0 && !excludedSlugs.includes(cat.slug))
     : (homepageConfig?.sections?.length ? homepageConfig.sections : fallbackCategoryCards);
 
   // Lista da sidebar de categorias (mesmo aside do /shop). "Todos" leva ao /shop
