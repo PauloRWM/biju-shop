@@ -39,7 +39,7 @@ const banners: Banner[] = [
   },
 ];
 
-const fallbackCategoryCards = [
+const fallbackCategoryCards: { name: string; image: string; count: number; slug?: string }[] = [
   { name: "Colares", image: "https://picsum.photos/seed/cat-colares/400/500", count: 12 },
   { name: "Brincos", image: "https://picsum.photos/seed/cat-brincos/400/500", count: 18 },
   { name: "Pulseiras", image: "https://picsum.photos/seed/cat-pulseiras/400/500", count: 9 },
@@ -226,9 +226,12 @@ const Index = () => {
               </div>
             </aside>
 
-            {/* Seções de produtos por categoria, ao lado do aside */}
+            {/* Seções de produtos por categoria, ao lado do aside.
+                Lista TODAS as categorias com produtos (mesma fonte dos círculos),
+                não só as configuradas no admin — a home rola até o fim passando
+                por todas, cada uma com seu carrossel horizontal. */}
             <div className="flex-1 min-w-0 space-y-10 md:space-y-14">
-              {(homepageConfig?.sections ?? fallbackCategoryCards).map((section, idx) => (
+              {sections.map((section, idx) => (
                 <CategorySection key={section.slug || section.name} section={section} index={idx} />
               ))}
             </div>
@@ -385,7 +388,7 @@ const CategoryCircle = ({ cat }: { cat: { name: string; slug?: string; count: nu
 // a busca de produtos quando entra (ou está perto de entrar) na viewport, via
 // IntersectionObserver. As primeiras seções (index < 1) carregam de imediato
 // para não atrasar o conteúdo acima da dobra.
-const CategorySection = ({ section, index }: { section: typeof fallbackCategoryCards[0]; index: number }) => {
+const CategorySection = ({ section, index }: { section: { name: string; slug?: string; count: number; image?: string | null }; index: number }) => {
   const containerRef = useRef<HTMLElement | null>(null);
   // Primeira seção carrega na hora; as demais esperam chegar perto da viewport.
   const [inView, setInView] = useState(index < 1);
@@ -412,8 +415,12 @@ const CategorySection = ({ section, index }: { section: typeof fallbackCategoryC
     return () => obs.disconnect();
   }, [inView]);
 
+  // per_page alto: Wesley quer "todos os produtos" deslizando pros lados em cada
+  // categoria (anúncio pesado direto pra home). O carregamento por viewport
+  // (inView) evita que TODAS as seções busquem de uma vez — só a seção que entra
+  // na tela dispara a busca, mantendo o load inicial leve.
   const { data: productsPage, isLoading } = useProducts(
-    { category: section.slug || section.name, per_page: 12 },
+    { category: section.slug || section.name, per_page: 50 },
     { enabled: inView },
   );
 

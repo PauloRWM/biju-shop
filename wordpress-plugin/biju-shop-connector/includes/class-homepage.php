@@ -69,7 +69,7 @@ class Biju_Homepage {
         } );
 
         $response = new WP_REST_Response( $payload, 200 );
-        $response->header( 'Cache-Control', 'public, max-age=60, s-maxage=300, stale-while-revalidate=600' );
+        $response->header( 'Cache-Control', 'public, max-age=60, s-maxage=60' );
         return $response;
     }
 

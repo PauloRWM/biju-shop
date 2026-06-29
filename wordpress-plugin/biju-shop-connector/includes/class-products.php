@@ -117,10 +117,13 @@ class Biju_Products {
     /**
      * Headers HTTP para que browser e CDN/proxy possam cachear rotas públicas.
      */
-    private static function cache_headers( WP_REST_Response $response, int $max_age = 60, int $s_max_age = 300 ): void {
+    private static function cache_headers( WP_REST_Response $response, int $max_age = 30, int $s_max_age = 30 ): void {
+        // Sem 'stale-while-revalidate': ele permitia o navegador servir estoque
+        // velho por até 10 min enquanto revalidava. O estoque muda a cada venda,
+        // então a janela de validade aqui é curta e nunca servimos "stale".
         $response->header(
             'Cache-Control',
-            "public, max-age={$max_age}, s-maxage={$s_max_age}, stale-while-revalidate=600"
+            "public, max-age={$max_age}, s-maxage={$s_max_age}"
         );
     }
 
@@ -142,9 +145,46 @@ class Biju_Products {
             fn() => self::format_product( $product, 'full' )
         );
 
+        // Estoque NUNCA vem do cache: relê ao vivo do produto/variações para
+        // refletir vendas e ajustes na hora. O cache versionado guarda apenas os
+        // campos pesados (imagens, variações, descrição) — assim a performance é
+        // mantida sem o cliente ver "em estoque" num item já esgotado na compra.
+        $data = self::overlay_live_stock( $data, $product );
+
         $response = new WP_REST_Response( $data, 200 );
-        self::cache_headers( $response );
+        // Página de decisão de compra: o navegador/CDN deve sempre revalidar, para
+        // nunca servir estoque velho via max-age/stale-while-revalidate.
+        $response->header( 'Cache-Control', 'no-cache, must-revalidate, max-age=0' );
         return $response;
+    }
+
+    /**
+     * Sobrepõe os campos de estoque do payload (possivelmente cacheado) com a
+     * leitura ao vivo do produto e de cada variação. Leitura barata: os objetos
+     * já estão no object cache (Redis), que o WooCommerce limpa a cada mudança
+     * de estoque, então o valor lido aqui é sempre o atual.
+     */
+    private static function overlay_live_stock( array $data, WC_Product $product ): array {
+        $data['inStock']       = $product->is_in_stock();
+        $data['stockQuantity'] = $product->get_stock_quantity();
+
+        if ( ! empty( $data['variations'] ) && is_array( $data['variations'] ) ) {
+            foreach ( $data['variations'] as &$v ) {
+                $vid = (int) ( $v['id'] ?? 0 );
+                if ( ! $vid ) {
+                    continue;
+                }
+                $variation = wc_get_product( $vid );
+                if ( $variation ) {
+                    $v['inStock'] = $variation->is_in_stock();
+                    $qty          = $variation->get_stock_quantity();
+                    $v['stockQuantity'] = ( null === $qty || '' === $qty ) ? null : (int) $qty;
+                }
+            }
+            unset( $v );
+        }
+
+        return $data;
     }
 
     /**

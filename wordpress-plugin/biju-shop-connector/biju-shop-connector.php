@@ -102,6 +102,7 @@ require_once BIJU_CONNECTOR_PATH . 'includes/class-shipping.php';
 require_once BIJU_CONNECTOR_PATH . 'includes/class-coupons.php';
 require_once BIJU_CONNECTOR_PATH . 'includes/class-abandoned-cart.php';
 require_once BIJU_CONNECTOR_PATH . 'includes/class-product-duplicator.php';
+require_once BIJU_CONNECTOR_PATH . 'includes/class-stock-monitor.php';
 require_once BIJU_CONNECTOR_PATH . 'includes/class-rest-api.php';
 
 // Inicializar
@@ -141,6 +142,17 @@ add_action( 'plugins_loaded', function () {
 // Páginas de administração
 add_action( 'admin_menu', 'biju_admin_menu' );
 function biju_admin_menu() {
+    // Página de estoque — top-level (menu próprio) para acesso rápido pela equipe.
+    add_menu_page(
+        'Estoque — Biju Shop',
+        'Estoque',
+        'manage_woocommerce',
+        'biju-stock',
+        [ 'Biju_Stock_Monitor', 'render_page' ],
+        'dashicons-products',
+        56
+    );
+
     add_options_page(
         'Biju Shop — Página Inicial',
         'Biju Shop — Página Inicial',
