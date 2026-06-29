@@ -24,6 +24,7 @@ interface FbqFn {
   (cmd: 'track', event: string, params?: Record<string, unknown>, opts?: { eventID?: string }): void;
   (cmd: 'trackCustom', event: string, params?: Record<string, unknown>, opts?: { eventID?: string }): void;
   (cmd: 'set', key: string, value: unknown): void;
+  (cmd: 'set', key: string, value: unknown, pixelId: string): void;
   callMethod?: (...args: unknown[]) => void;
   queue?: unknown[];
   loaded?: boolean;
@@ -83,6 +84,17 @@ const loadPixel = (pixelId: string, advanced?: Record<string, string>) => {
     JSON.stringify(pixelInitArgs.advanced ?? {}) === JSON.stringify(advanced ?? {});
   if (sameAdvanced) return;
   pixelInitArgs = { pixelId, advanced };
+
+  // Desliga o autoConfig ANTES do init. Com autoConfig ligado (padrão do Meta),
+  // o pixel detecta sozinho cliques em botões e dispara AddToCart/ViewContent
+  // "automáticos" — SEM event_id, então o Meta NÃO deduplica com os nossos
+  // eventos explícitos. Isso inflava o AddToCart (cada add virava 2+ eventos)
+  // enquanto InitiateCheckout/Purchase (não auto-detectados) ficavam corretos —
+  // exatamente a divergência "carrinho >> checkout" nos relatórios. Com
+  // autoConfig=false, só os nossos eventos (browser + CAPI, mesmo event_id,
+  // deduplicados) são contados.
+  window.fbq?.('set', 'autoConfig', false, pixelId);
+
   if (advanced && Object.keys(advanced).length > 0) {
     window.fbq?.('init', pixelId, advanced);
   } else {

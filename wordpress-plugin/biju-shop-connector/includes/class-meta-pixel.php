@@ -301,6 +301,26 @@ class Biju_Meta_Pixel {
         $event_id = sanitize_text_field( $payload['event_id'] ?? wp_generate_uuid4() );
         $url      = esc_url_raw( $payload['event_source_url'] ?? '' );
 
+        // [TEMP DEBUG — remover depois] Loga cada evento recebido para auditar
+        // duplicação/over-firing nos relatórios do Meta. Sem dados sensíveis:
+        // só nome, event_id, fbp (cookie pseudônimo de sessão) e URL.
+        if ( get_option( 'biju_meta_debug', true ) ) {
+            $u   = is_array( $payload['user_data'] ?? null ) ? $payload['user_data'] : [];
+            $fbp = $u['fbp'] ?? ( $_COOKIE['_fbp'] ?? '-' );
+            $cd  = is_array( $payload['custom_data'] ?? null ) ? $payload['custom_data'] : [];
+            $line = sprintf(
+                "%s\t%s\t%s\t%s\tnum_items=%s\tcontents=%d\t%s\n",
+                gmdate( 'Y-m-d H:i:s' ),
+                $name,
+                $event_id,
+                $fbp,
+                isset( $cd['num_items'] ) ? (string) $cd['num_items'] : '-',
+                is_array( $cd['contents'] ?? null ) ? count( $cd['contents'] ) : 0,
+                $url
+            );
+            @file_put_contents( WP_CONTENT_DIR . '/uploads/biju-meta-debug.log', $line, FILE_APPEND | LOCK_EX );
+        }
+
         $custom = is_array( $payload['custom_data'] ?? null ) ? $payload['custom_data'] : [];
         $user   = is_array( $payload['user_data'] ?? null )   ? $payload['user_data']   : [];
 
