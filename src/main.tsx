@@ -2,6 +2,11 @@ import { createRoot } from "react-dom/client";
 import App from "./App.tsx";
 import "./index.css";
 import { hideInitialLoader } from "./lib/initialLoader";
+import { initSentry } from "./lib/sentry";
+
+// Inicializa o monitoramento de erros antes de qualquer render, para também
+// capturar falhas fatais na montagem do React.
+initSentry();
 
 // ────────────────────────────────────────────────────────────────────────────
 // Limpeza de Service Worker (modo kill switch permanente)
