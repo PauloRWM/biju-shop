@@ -76,6 +76,58 @@ function biju_sem_status_encomenda( $status ) {
     return ( 'onbackorder' === $status ) ? 'outofstock' : $status;
 }
 
+// ───────────────────────────────────────────────────────────────────────────
+// LIBERAR RESERVA DE ESTOQUE QUANDO O PEDIDO FALHA
+//
+// O WooCommerce core libera a reserva (wc_reserved_stock) nas transições para
+// cancelled/completed/processing/on-hold e em payment_complete — mas NÃO no
+// status 'failed' (ver wc-stock-functions.php). Um PIX recusado vira 'failed'
+// e a reserva ficava presa até expirar (eram 10h). Se o cliente tentava pagar
+// de novo, cada tentativa criava uma nova reserva do mesmo item: o próprio
+// cliente esgotava o estoque que queria comprar e via "fora de estoque".
+// Liberamos na hora, como o core já faz para os outros status terminais.
+// ───────────────────────────────────────────────────────────────────────────
+add_action( 'woocommerce_order_status_failed', 'wc_release_stock_for_order', 11 );
+
+// ───────────────────────────────────────────────────────────────────────────
+// CANCELAMENTO AUTOMÁTICO DE PIX NÃO PAGO
+//
+// wc_cancel_unpaid_orders() só cancela pedidos cujo created_via está em
+// ['checkout','store-api'] (wc-order-functions.php). Os pedidos desta loja
+// nascem no endpoint REST headless e ficam com created_via vazio — ou seja,
+// o cancelamento nativo NUNCA dispararia neles, e o estoque reservado só se
+// liberaria pela expiração da reserva, deixando o pedido pendente para sempre.
+//
+// Liberamos o cancelamento apenas para PIX. Cartão fica de fora de propósito:
+// o Mercado Pago às vezes segura a transação em análise (in_process) por mais
+// de 20 min e aprova depois — cancelar nesse meio-tempo geraria pagamento sem
+// pedido. O QR do PIX expira junto com a reserva (ver class-mp-processor.php),
+// então nenhum cliente consegue pagar um pedido já cancelado.
+// ───────────────────────────────────────────────────────────────────────────
+add_filter( 'woocommerce_cancel_unpaid_order', 'biju_cancelar_pix_nao_pago', 10, 2 );
+function biju_cancelar_pix_nao_pago( $cancel, $order ) {
+    if ( ! $order instanceof WC_Order ) {
+        return $cancel;
+    }
+    if ( 'woo-mercado-pago-pix' === $order->get_payment_method() ) {
+        return true;
+    }
+    return $cancel;
+}
+
+// O cron de cancelamento é reagendado pelo próprio wc_cancel_unpaid_orders().
+// Se ninguém o agendou ainda (era o caso aqui), garantimos o primeiro disparo.
+add_action( 'init', 'biju_garantir_cron_cancelamento' );
+function biju_garantir_cron_cancelamento() {
+    if ( ! function_exists( 'WC' ) ) {
+        return;
+    }
+    $held = (int) get_option( 'woocommerce_hold_stock_minutes', 0 );
+    if ( $held > 0 && ! wp_next_scheduled( 'woocommerce_cancel_unpaid_orders' ) ) {
+        wp_schedule_single_event( time() + $held * 60, 'woocommerce_cancel_unpaid_orders' );
+    }
+}
+
 // Verificar dependência do WooCommerce
 add_action( 'admin_init', 'biju_check_woocommerce' );
 function biju_check_woocommerce() {
@@ -103,6 +155,8 @@ require_once BIJU_CONNECTOR_PATH . 'includes/class-coupons.php';
 require_once BIJU_CONNECTOR_PATH . 'includes/class-abandoned-cart.php';
 require_once BIJU_CONNECTOR_PATH . 'includes/class-product-duplicator.php';
 require_once BIJU_CONNECTOR_PATH . 'includes/class-stock-monitor.php';
+require_once BIJU_CONNECTOR_PATH . 'includes/class-price-sync.php';
+require_once BIJU_CONNECTOR_PATH . 'includes/class-variation-bulk-price.php';
 require_once BIJU_CONNECTOR_PATH . 'includes/class-rest-api.php';
 
 // Inicializar
@@ -111,6 +165,8 @@ add_action( 'plugins_loaded', function () {
 
     Biju_CORS::init();
     Biju_Cache::init();
+    Biju_Price_Sync::init();
+    Biju_Variation_Bulk_Price::init();
     Biju_Perf_Probe::init(); // diagnóstico temporário — remover depois
     Biju_REST_API::init();
     Biju_Meta_Pixel::init();

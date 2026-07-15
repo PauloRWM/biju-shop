@@ -350,9 +350,26 @@ class Biju_Orders {
      * Retorna WP_Error quando não há estoque disponível (outro pedido reservou),
      * ou null em caso de sucesso / API de reserva indisponível.
      */
-    private static function reserve_stock_or_fail( WC_Order $order ): ?WP_Error {
+    private static function reserve_stock_or_fail( WC_Order $order, bool $renovar = false ): ?WP_Error {
         if ( ! function_exists( 'wc_reserve_stock_for_order' ) ) {
             return null; // WooCommerce < 4.0 — sem API de reserva.
+        }
+        // Repagamento: se o pedido AINDA tem reserva válida, as unidades já são
+        // dele — basta esticar a validade. Não passamos por wc_reserve_stock_for_order()
+        // aqui por dois motivos:
+        //   1. o SQL do Woo é INSERT ... ON DUPLICATE KEY UPDATE e ele trata
+        //      "0 linhas afetadas" como falta de estoque; recriar a reserva dentro
+        //      do mesmo segundo não muda `expires`, o MySQL devolve 0 e o cliente
+        //      recebe um "produto esgotado" falso;
+        //   2. liberar e reservar de novo abriria uma janela em que outro pedido
+        //      poderia tomar as unidades que já eram deste cliente.
+        if ( $renovar && self::renovar_reserva_existente( $order ) ) {
+            return null;
+        }
+        // Sem reserva válida (expirou ou nunca existiu): limpa linhas velhas e
+        // disputa o estoque de novo, com checagem de disponibilidade.
+        if ( $renovar && function_exists( 'wc_release_stock_for_order' ) ) {
+            wc_release_stock_for_order( $order );
         }
         try {
             wc_reserve_stock_for_order( $order );
@@ -366,6 +383,32 @@ class Biju_Orders {
             );
         }
         return null;
+    }
+
+    /**
+     * Estica a validade da reserva que o pedido já possui.
+     *
+     * Retorna true apenas se havia reserva NÃO expirada para o pedido — nesse
+     * caso as unidades continuam sendo dele e nenhuma checagem de estoque é
+     * necessária. Retorna false quando não há nada a renovar, e aí o chamador
+     * precisa disputar o estoque normalmente.
+     */
+    private static function renovar_reserva_existente( WC_Order $order ): bool {
+        global $wpdb;
+
+        $minutos = max( 5, (int) get_option( 'woocommerce_hold_stock_minutes', 20 ) );
+        $tabela  = $wpdb->prefix . 'wc_reserved_stock';
+
+        $linhas = (int) $wpdb->query(
+            $wpdb->prepare(
+                "UPDATE {$tabela} SET `expires` = ( NOW() + INTERVAL %d MINUTE )
+                 WHERE `order_id` = %d AND `expires` > NOW()",
+                $minutos,
+                $order->get_id()
+            )
+        );
+
+        return $linhas > 0;
     }
 
     /**
@@ -1015,6 +1058,17 @@ class Biju_Orders {
         // Só pedidos que ainda estão aguardando pagamento podem ser cobrados de novo.
         if ( ! in_array( $order->get_status(), [ 'pending', 'on-hold', 'failed' ], true ) ) {
             return new WP_Error( 'not_payable', 'Este pedido não está mais aguardando pagamento.', [ 'status' => 409 ] );
+        }
+
+        // Reservar o estoque DE NOVO antes de cobrar. A reserva criada quando o
+        // pedido nasceu já expirou (woocommerce_hold_stock_minutes), então neste
+        // ponto o item pode ter sido vendido para outra pessoa. Sem isto, o
+        // cliente pagaria um pedido que a loja não consegue atender e o estoque
+        // iria a negativo na baixa. wc_reserve_stock_for_order() ignora a reserva
+        // do próprio pedido, então chamar de novo apenas renova a validade.
+        $reserve_error = self::reserve_stock_or_fail( $order, true );
+        if ( $reserve_error ) {
+            return $reserve_error; // 409 — diferente da criação, aqui NÃO apagamos o pedido.
         }
 
         $body           = $request->get_json_params() ?: [];

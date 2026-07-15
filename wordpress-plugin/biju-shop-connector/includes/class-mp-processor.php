@@ -23,6 +23,9 @@ class Biju_MP_Processor {
 
     private const API_BASE = 'https://api.mercadopago.com';
 
+    /** Minutos que o QR do PIX morre antes do cancelamento automático do pedido. */
+    private const MARGEM_CANCELAMENTO_MIN = 5;
+
     // ---------------------------------------------------------------------
     // Credenciais — lê do plugin Woo MP, sem duplicar config
     // ---------------------------------------------------------------------
@@ -209,10 +212,17 @@ class Biju_MP_Processor {
         $first_name = self::sanitize_payer_name( $order->get_billing_first_name(), 'Cliente' );
         $last_name  = self::sanitize_payer_name( $order->get_billing_last_name(),  'Bijushop' );
 
-        // Expiração: 10 horas. O cliente tem prazo confortável para pagar e o
-        // webhook do MP atualiza o pedido automaticamente quando a transferência
-        // cai. Caso expire sem pagamento, o MP cancela e o pedido vira 'failed'.
-        $expires_at = gmdate( 'Y-m-d\TH:i:s.000P', time() + 10 * 3600 );
+        // O QR precisa morrer ANTES de o pedido ser cancelado, nunca depois.
+        //
+        // O cancelamento automático roda em woocommerce_hold_stock_minutes, que é
+        // também a validade da reserva de estoque. Se o QR durasse o mesmo tanto,
+        // um PIX pago no último segundo poderia ser aprovado depois do cancelamento:
+        // o payment_complete() baixaria estoque de um pedido já cancelado, cujas
+        // unidades voltaram para a prateleira e podem ter sido vendidas. Daí a
+        // margem de 5 minutos — tempo de sobra para o webhook do MP chegar.
+        $hold_minutes = max( 5, (int) get_option( 'woocommerce_hold_stock_minutes', 20 ) );
+        $qr_minutes   = max( 5, $hold_minutes - self::MARGEM_CANCELAMENTO_MIN );
+        $expires_at   = gmdate( 'Y-m-d\TH:i:s.000P', time() + $qr_minutes * 60 );
 
         $body = [
             'transaction_amount'   => round( (float) $order->get_total(), 2 ),
@@ -601,38 +611,85 @@ class Biju_MP_Processor {
         $status        = (string) ( $payment['status'] ?? '' );
         $status_detail = (string) ( $payment['status_detail'] ?? '' );
 
-        $order->update_meta_data( '_mp_payment_id', (string) $payment_id );
-        $order->update_meta_data( '_mp_payment_status', $status );
-        $order->update_meta_data( '_mp_payment_status_detail', $status_detail );
-        $order->save();
+        global $wpdb;
 
-        $current = $order->get_status();
-        switch ( $status ) {
-            case 'approved':
-                if ( ! in_array( $current, [ 'processing', 'completed' ], true ) ) {
-                    $order->payment_complete( (string) $payment_id );
-                    $order->add_order_note( "Webhook MP: pagamento aprovado. payment_id={$payment_id}" );
-                }
-                break;
-            case 'in_process':
-            case 'pending':
-                if ( ! in_array( $current, [ 'on-hold', 'processing', 'completed' ], true ) ) {
-                    $order->update_status( 'on-hold', "Webhook MP: pendente. status_detail={$status_detail}" );
-                }
-                break;
-            case 'rejected':
-            case 'cancelled':
-                if ( ! in_array( $current, [ 'failed', 'cancelled', 'refunded' ], true ) ) {
-                    $order->update_status( $status === 'cancelled' ? 'cancelled' : 'failed',
-                        "Webhook MP: {$status}. status_detail={$status_detail}" );
-                }
-                break;
-            case 'refunded':
-            case 'charged_back':
-                if ( $current !== 'refunded' ) {
-                    $order->update_status( 'refunded', "Webhook MP: {$status}." );
-                }
-                break;
+        // Trava atômica por (pagamento, status). O MP entrega o mesmo evento mais
+        // de uma vez, e sem serialização as duas execuções leem o status do pedido
+        // ANTES de qualquer uma gravar — os guards abaixo passam nas duas e o
+        // estoque é devolvido/baixado em dobro. GET_LOCK() é atômico no MySQL;
+        // wp_cache_add() do drop-in Redis não é (faz exists() e depois set()).
+        $assinatura = $payment_id . ':' . $status;
+        $trava      = 'biju_mp_wh_' . md5( $assinatura );
+        if ( '1' !== (string) $wpdb->get_var( $wpdb->prepare( 'SELECT GET_LOCK(%s, 10)', $trava ) ) ) {
+            return new WP_REST_Response( [ 'ok' => true, 'note' => 'lock timeout' ], 200 );
+        }
+
+        try {
+            // Recarrega DEPOIS da trava: o estado pode ter mudado enquanto esperávamos.
+            $order   = wc_get_order( $order_id );
+            $current = $order->get_status();
+
+            // Idempotência: este par (pagamento, status) já foi aplicado.
+            if ( $order->get_meta( '_mp_webhook_aplicado' ) === $assinatura ) {
+                return new WP_REST_Response( [ 'ok' => true, 'note' => 'evento duplicado ignorado' ], 200 );
+            }
+
+            $pago = $order->is_paid(); // processing ou completed
+
+            // Um PIX pago e um QR antigo expirado convivem no mesmo pedido: o cliente
+            // pode ter gerado um segundo QR em /orders/{id}/pay. Se deixarmos o evento
+            // do pagamento morto sobrescrever os metadados, o pedido pago passa a
+            // constar como "cancelled/expired".
+            $evento_terminal_negativo = in_array( $status, [ 'rejected', 'cancelled' ], true );
+            if ( ! ( $pago && $evento_terminal_negativo ) ) {
+                $order->update_meta_data( '_mp_payment_id', (string) $payment_id );
+                $order->update_meta_data( '_mp_payment_status', $status );
+                $order->update_meta_data( '_mp_payment_status_detail', $status_detail );
+            }
+
+            switch ( $status ) {
+                case 'approved':
+                    if ( ! in_array( $current, [ 'processing', 'completed' ], true ) ) {
+                        $order->payment_complete( (string) $payment_id );
+                        $order->add_order_note( "Webhook MP: pagamento aprovado. payment_id={$payment_id}" );
+                    }
+                    break;
+                case 'in_process':
+                case 'pending':
+                    if ( ! in_array( $current, [ 'on-hold', 'processing', 'completed' ], true ) ) {
+                        $order->update_status( 'on-hold', "Webhook MP: pendente. status_detail={$status_detail}" );
+                    }
+                    break;
+                case 'rejected':
+                case 'cancelled':
+                    // NUNCA cancelar um pedido já pago. O QR do PIX expira sozinho depois
+                    // do pagamento e o MP dispara 'cancelled/expired' para ELE — cancelar
+                    // aqui devolvia o estoque de um pedido pago, que depois voltava para
+                    // processing e baixava o estoque de novo, deixando o saldo negativo.
+                    if ( $pago ) {
+                        $order->add_order_note(
+                            "Webhook MP ignorado: {$status} ({$status_detail}) do pagamento {$payment_id}, " .
+                            'mas o pedido já está pago. Estoque preservado.'
+                        );
+                        break;
+                    }
+                    if ( ! in_array( $current, [ 'failed', 'cancelled', 'refunded' ], true ) ) {
+                        $order->update_status( $status === 'cancelled' ? 'cancelled' : 'failed',
+                            "Webhook MP: {$status}. status_detail={$status_detail}" );
+                    }
+                    break;
+                case 'refunded':
+                case 'charged_back':
+                    if ( $current !== 'refunded' ) {
+                        $order->update_status( 'refunded', "Webhook MP: {$status}." );
+                    }
+                    break;
+            }
+
+            $order->update_meta_data( '_mp_webhook_aplicado', $assinatura );
+            $order->save();
+        } finally {
+            $wpdb->get_var( $wpdb->prepare( 'SELECT RELEASE_LOCK(%s)', $trava ) );
         }
 
         return new WP_REST_Response( [ 'ok' => true, 'order_id' => $order_id, 'status' => $status ], 200 );

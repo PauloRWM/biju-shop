@@ -102,7 +102,10 @@ if ( $biju_edge_info && function_exists( 'wp_cache_get' ) ) {
         // HIT: responde sem inicializar WooCommerce/Elementor/etc.
         header( 'Content-Type: application/json; charset=UTF-8' );
         header( 'X-Biju-Edge: HIT' );
-        header( 'Cache-Control: public, max-age=60, s-maxage=300, stale-while-revalidate=600' );
+        // Fallback caso a entrada cacheada seja antiga e não tenha guardado o
+        // Cache-Control; logo abaixo o valor real da rota (incl. no-cache do
+        // detalhe de produto) é repetido a partir de $cached['h'] e sobrescreve.
+        header( 'Cache-Control: public, max-age=30, s-maxage=30' );
         if ( ! empty( $cached['h'] ) && is_array( $cached['h'] ) ) {
             foreach ( $cached['h'] as $hk => $hv ) {
                 header( $hk . ': ' . $hv );
@@ -133,10 +136,13 @@ if ( $biju_edge_info ) {
             return $result;
         }
 
-        // Preserva os headers de paginação que o handler de produtos define.
+        // Preserva os headers de paginação e o Cache-Control real da rota, para
+        // que o HIT repita exatamente a política de cache que o handler definiu
+        // (ex.: 'no-cache' no detalhe de produto, para o estoque nunca ficar
+        // congelado no navegador). Sem isto, o HIT serviria um Cache-Control fixo.
         $store_headers = [];
         $headers = $result->get_headers();
-        foreach ( [ 'X-WP-Total', 'X-WP-TotalPages' ] as $h ) {
+        foreach ( [ 'X-WP-Total', 'X-WP-TotalPages', 'Cache-Control' ] as $h ) {
             if ( isset( $headers[ $h ] ) ) {
                 $store_headers[ $h ] = $headers[ $h ];
             }
