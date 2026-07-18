@@ -193,6 +193,13 @@ interface TrackOptions {
   eventId?: string;
   userData?: MetaUserData;
   customData?: MetaCustomData;
+  /**
+   * Envia SÓ pelo servidor (CAPI), sem disparar o pixel do navegador. Usado no
+   * AddToCart: o cliente Wesley preferiu um único canal para o evento não
+   * aparecer em dois lugares (navegador + servidor) no Gerenciador de Eventos.
+   * A atribuição continua via fbp/fbc (o _fbp já é gravado pelo PageView).
+   */
+  serverOnly?: boolean;
 }
 
 /**
@@ -268,10 +275,12 @@ const track = async (eventName: string, opts: TrackOptions = {}) => {
   const eventId = opts.eventId ?? newEventId();
   const customData = opts.customData ?? {};
 
-  // 1) Pixel no navegador
-  window.fbq?.('track', eventName, customData as Record<string, unknown>, { eventID: eventId });
+  // 1) Pixel no navegador (pulado quando serverOnly — ver AddToCart)
+  if (!opts.serverOnly) {
+    window.fbq?.('track', eventName, customData as Record<string, unknown>, { eventID: eventId });
+  }
 
-  // 2) CAPI no servidor (mesmo event_id → deduplicado pelo Meta)
+  // 2) CAPI no servidor (quando há navegador, mesmo event_id → deduplicado)
   const cookies = getMetaCookies();
   await sendCapi({
     event_name: eventName,
@@ -315,6 +324,9 @@ export const trackAddToCart = (params: {
   currency?: string;
 }) =>
   track('AddToCart', {
+    // Só servidor: evita o AddToCart aparecer em dois canais (navegador +
+    // servidor) no Gerenciador de Eventos. Decisão do cliente.
+    serverOnly: true,
     customData: {
       content_type: 'product',
       content_ids: [params.productId],
