@@ -219,18 +219,31 @@ class Biju_Abandoned_Cart {
                 continue; // produto removido/despublicado: omite do carrinho
             }
 
-            // 'full' garante que variações venham populadas (necessário para
-            // o front resolver preço/estoque da variação selecionada).
-            $formatted = Biju_Products::format_product( $product, 'full' );
-
             // Preço unitário da linha: se houver variação, tenta o preço dela.
             $unit_price = (float) $product->get_price();
+            $variation  = null;
             if ( $variation_id ) {
                 $variation = wc_get_product( $variation_id );
                 if ( $variation ) {
                     $unit_price = (float) $variation->get_price();
                 }
             }
+
+            // FILTRO DE ESTOQUE: não recupera item esgotado. A encomenda está
+            // desligada na loja, então trazer de volta um produto sem estoque só
+            // frustraria o cliente (ou geraria estoque negativo se ele fechasse).
+            // Quem manda no estoque é a VARIAÇÃO quando existe; senão, o produto.
+            // Revalidado aqui (não no momento em que o carrinho foi salvo) porque
+            // o link pode ser aberto dias depois. Cobre tanto o link de
+            // recuperação quanto o carrinho salvo lido no login.
+            $stock_ref = $variation ?: $product;
+            if ( ! $stock_ref->is_in_stock() || ! $stock_ref->has_enough_stock( $quantity ) ) {
+                continue;
+            }
+
+            // 'full' garante que variações venham populadas (necessário para
+            // o front resolver preço/estoque da variação selecionada).
+            $formatted = Biju_Products::format_product( $product, 'full' );
 
             $items[] = [
                 'product'     => $formatted,

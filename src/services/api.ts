@@ -78,6 +78,12 @@ export class ApiError extends Error {
     public status: number,
     public code: string,
     message: string,
+    /**
+     * Payload extra do erro (campo `data` do WP_Error). Ex.: nos erros de
+     * estoque o backend manda { product_id, variation_id, available, name }
+     * para o checkout identificar o item e recalcular sem parsear a mensagem.
+     */
+    public data?: Record<string, unknown>,
   ) {
     super(message);
     this.name = 'ApiError';
@@ -141,14 +147,17 @@ async function request<T>(path: string, opts: RequestOptions = {}): Promise<T> {
   if (!res.ok) {
     let code = 'api_error';
     let message = `HTTP ${res.status}`;
+    let data: Record<string, unknown> | undefined;
     try {
       const err = await res.json();
       code = err.code ?? code;
       message = err.message ?? message;
+      // WP_Error serializa os campos extras sob `data` (junto com `status`).
+      if (err.data && typeof err.data === 'object') data = err.data;
     } catch {
       // ignore parse error
     }
-    throw new ApiError(res.status, code, message);
+    throw new ApiError(res.status, code, message, data);
   }
 
   // 204 No Content

@@ -37,8 +37,35 @@ import {
   getMetaCookies,
 } from "@/services/metaPixel";
 import CreditCardPreview, { type CardFocus } from "@/components/CreditCardPreview";
+import PixExpiryNotice from "@/components/PixExpiryNotice";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 
 type PaymentMethod = "credit" | "pix" | "boleto";
+
+/**
+ * Item do carrinho que o servidor recusou por estoque no momento de finalizar
+ * (produto esgotou ou quantidade caiu durante o checkout). Em vez de travar,
+ * mostramos um diálogo perguntando se o cliente quer seguir sem o item (ou com
+ * a quantidade disponível). `available === 0` = esgotado; > 0 = ajustar quantidade.
+ */
+interface StockIssue {
+  productId: string;
+  variationId?: number;
+  name: string;
+  requested: number;
+  available: number;
+  /** Subtotal dos produtos após a correção (frete/desconto recalculam na tela). */
+  newSubtotal: number;
+}
 
 // UFs do Brasil (código usado pelo WooCommerce no campo billing_state).
 const BR_STATES: { uf: string; name: string }[] = [
@@ -129,6 +156,9 @@ const Checkout = () => {
   const [orderId, setOrderId] = useState<number | null>(null);
   const [paymentDetails, setPaymentDetails] = useState<import("@/services/orders").PaymentDetails | null>(null);
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("pix");
+  // Item recusado por estoque ao finalizar — quando setado, abre o diálogo
+  // "prosseguir sem o item?" em vez de travar o checkout.
+  const [stockIssue, setStockIssue] = useState<StockIssue | null>(null);
 
   // Polling de status do pedido — só ativo na tela de sucesso PIX enquanto não pago.
   // Backend marca o pedido como 'processing'/'completed' quando o webhook do MP chega
@@ -575,6 +605,53 @@ const Checkout = () => {
     return null;
   }
 
+  // Monta o StockIssue a partir do `data` do erro 422 do backend, casando com
+  // o item no carrinho para saber preço/quantidade e estimar o novo subtotal.
+  const buildStockIssue = (data: Record<string, unknown>): StockIssue | null => {
+    const productId = String(data.product_id ?? "");
+    if (!productId) return null;
+    const variationId = data.variation_id ? Number(data.variation_id) : undefined;
+    const available = Math.max(0, Number(data.available ?? 0));
+    const item = items.find(
+      (i) => String(i.product.id) === productId && (i.variationId ?? 0) === (variationId ?? 0),
+    );
+    if (!item) return null; // item já não está mais no carrinho
+    const unit = item.unitPrice ?? item.product.price;
+    const lineTotal = unit * item.quantity;
+    // Subtotal de produtos após remover (available 0) ou ajustar para available.
+    const newSubtotal = totalPrice - lineTotal + unit * Math.min(available, item.quantity);
+    return {
+      productId,
+      variationId,
+      name: String(data.name ?? item.product.name),
+      requested: item.quantity,
+      available,
+      newSubtotal: Math.max(0, newSubtotal),
+    };
+  };
+
+  // Confirmação do diálogo: remove o item esgotado (ou ajusta para a quantidade
+  // disponível) e deixa o cliente conferir o novo total antes de finalizar de
+  // novo. NÃO reenviamos automaticamente: o token de cartão é de uso único e
+  // frete/cupom/pedido-mínimo podem mudar — o cliente revisa e clica outra vez.
+  const applyStockFix = () => {
+    if (!stockIssue) return;
+    const { productId, variationId, available, name } = stockIssue;
+    const wouldEmpty = available <= 0 && items.length === 1;
+    if (available <= 0) {
+      removeItem(productId, variationId);
+      toast.success(`"${name}" removido. Confira o total e toque em Confirmar Pedido.`);
+    } else {
+      updateQuantity(productId, available, variationId);
+      toast.success(`"${name}" ajustado para ${available}. Confira o total e toque em Confirmar Pedido.`);
+    }
+    setStockIssue(null);
+    if (wouldEmpty) {
+      toast("Seu carrinho ficou vazio. Que tal escolher outra peça?");
+      navigate("/");
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     const paymentMap: Record<PaymentMethod, "pix" | "billet" | "credit_card"> = {
@@ -775,6 +852,19 @@ const Checkout = () => {
       });
     } catch (err) {
       console.error("Falha ao finalizar pedido:", err);
+      // Estoque esgotou/mudou durante o checkout: em vez de travar, abre o
+      // diálogo "prosseguir sem o item?" (remove/ajusta e recalcula o total).
+      if (
+        err instanceof ApiError &&
+        (err.code === "product_unavailable" || err.code === "insufficient_stock") &&
+        err.data
+      ) {
+        const issue = buildStockIssue(err.data);
+        if (issue) {
+          setStockIssue(issue);
+          return;
+        }
+      }
       // Só exibe a mensagem do servidor (ApiError já vem traduzida/amigável).
       // Outros erros de JS mostram mensagem genérica para não vazar detalhes técnicos.
       const msg =
@@ -1569,10 +1659,7 @@ const Checkout = () => {
                     </div>
                   )}
                   {paymentDetails.expires_at && (
-                    <p className="text-xs text-muted-foreground">
-                      Válido até:{" "}
-                      {new Date(paymentDetails.expires_at).toLocaleString("pt-BR")}
-                    </p>
+                    <PixExpiryNotice expiresAt={paymentDetails.expires_at} />
                   )}
                 </div>
               )}
@@ -1626,6 +1713,59 @@ const Checkout = () => {
           )}
         </AnimatePresence>
       </div>
+
+      {/* Estoque acabou/mudou no meio do checkout: em vez de travar, pergunta se
+          o cliente quer seguir sem o item (ou com a quantidade disponível). */}
+      <AlertDialog
+        open={!!stockIssue}
+        onOpenChange={(o) => {
+          if (!o) setStockIssue(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {stockIssue?.available === 0 ? "Produto esgotou" : "Estoque insuficiente"}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {stockIssue &&
+                (stockIssue.available === 0 ? (
+                  <>
+                    Ops, não temos mais <strong>{stockIssue.name}</strong> em estoque.
+                    Deseja continuar a compra sem esse item?
+                    <br />
+                    Novo subtotal dos produtos:{" "}
+                    <strong>
+                      R$ {stockIssue.newSubtotal.toFixed(2).replace(".", ",")}
+                    </strong>{" "}
+                    (frete e descontos são recalculados na tela).
+                  </>
+                ) : (
+                  <>
+                    Só temos <strong>{stockIssue.available}</strong> unidade(s) de{" "}
+                    <strong>{stockIssue.name}</strong> em estoque (você pediu{" "}
+                    {stockIssue.requested}). Deseja ajustar para {stockIssue.available} e
+                    continuar?
+                    <br />
+                    Novo subtotal dos produtos:{" "}
+                    <strong>
+                      R$ {stockIssue.newSubtotal.toFixed(2).replace(".", ",")}
+                    </strong>{" "}
+                    (frete e descontos são recalculados na tela).
+                  </>
+                ))}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Não, revisar carrinho</AlertDialogCancel>
+            <AlertDialogAction onClick={applyStockFix}>
+              {stockIssue?.available === 0
+                ? "Sim, continuar sem ele"
+                : "Sim, ajustar e continuar"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </Layout>
   );
 };

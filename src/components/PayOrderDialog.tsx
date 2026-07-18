@@ -8,6 +8,7 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import PixExpiryNotice from "@/components/PixExpiryNotice";
 import {
   QrCode,
   CreditCard,
@@ -293,9 +294,7 @@ const PayOrderDialog = ({ order, open, onOpenChange, onPaid }: Props) => {
                 </div>
               )}
               {payment.expires_at && (
-                <p className="text-xs text-muted-foreground">
-                  Válido até: {new Date(payment.expires_at).toLocaleString("pt-BR")}
-                </p>
+                <PixExpiryNotice expiresAt={payment.expires_at} />
               )}
             </div>
             <div className="inline-flex items-center gap-2 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-full px-3 py-1 mx-auto w-full justify-center">

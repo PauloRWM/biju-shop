@@ -115,8 +115,19 @@ class Biju_Orders {
 
             if ( ! $target || ! $target->is_in_stock() ) {
                 $order->delete( true );
+                $nome = $target ? $target->get_name() : "produto #$product_id";
+                // `data` estruturado: o front usa product_id/variation_id/available
+                // para identificar o item no carrinho e oferecer continuar sem ele,
+                // em vez de travar o checkout. Ver handleSubmit em Checkout.tsx.
                 return new WP_Error( 'product_unavailable',
-                    "Produto $product_id indisponível.", [ 'status' => 422 ] );
+                    sprintf( 'Não temos mais "%s" em estoque.', $nome ),
+                    [
+                        'status'       => 422,
+                        'product_id'   => $product_id,
+                        'variation_id' => $variation_id,
+                        'available'    => 0,
+                        'name'         => $nome,
+                    ] );
             }
 
             // Valida a QUANTIDADE pedida contra o estoque disponível. O front já
@@ -125,16 +136,23 @@ class Biju_Orders {
             // managing_stock e backorders, e retorna true quando o produto não
             // gerencia estoque (estoque ilimitado).
             if ( ! $target->has_enough_stock( $quantity ) ) {
-                $available = $target->get_stock_quantity();
+                $available     = $target->get_stock_quantity();
+                $available_int = is_null( $available ) ? 0 : max( 0, (int) $available );
                 $order->delete( true );
                 return new WP_Error(
                     'insufficient_stock',
                     sprintf(
-                        'Estoque insuficiente para "%s". Disponível: %s.',
-                        $target->get_name(),
-                        is_null( $available ) ? '0' : (string) max( 0, (int) $available )
+                        'Só temos %d unidade(s) de "%s" em estoque.',
+                        $available_int,
+                        $target->get_name()
                     ),
-                    [ 'status' => 422 ]
+                    [
+                        'status'       => 422,
+                        'product_id'   => $product_id,
+                        'variation_id' => $variation_id,
+                        'available'    => $available_int,
+                        'name'         => $target->get_name(),
+                    ]
                 );
             }
 
