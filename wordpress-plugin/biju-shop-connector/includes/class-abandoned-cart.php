@@ -48,12 +48,13 @@ class Biju_Abandoned_Cart {
             return rest_ensure_response( [ 'success' => true, 'skipped' => 'no_identifier' ] );
         }
 
-        $ident = Biju_Stock_Holds::ident( $user_id, $email, $phone );
+        // Id da linha do carrinho abandonado (estável) — é a chave do hold.
+        $existing_id = self::find_existing_id( $user_id, $email, $phone );
 
         $raw_items = $request->get_param( 'items' );
         if ( ! is_array( $raw_items ) || empty( $raw_items ) ) {
             // Carrinho esvaziado → devolve o estoque que este carrinho segurava.
-            Biju_Stock_Holds::release_for_cart( $ident );
+            if ( $existing_id ) Biju_Stock_Holds::release_for_cart( $existing_id );
             self::delete_for( $user_id, $email, $phone );
             return rest_ensure_response( [ 'success' => true, 'cleared' => true ] );
         }
@@ -85,21 +86,15 @@ class Biju_Abandoned_Cart {
         }
 
         if ( empty( $normalized ) ) {
-            Biju_Stock_Holds::release_for_cart( $ident );
+            if ( $existing_id ) Biju_Stock_Holds::release_for_cart( $existing_id );
             self::delete_for( $user_id, $email, $phone );
             return rest_ensure_response( [ 'success' => true, 'cleared' => true ] );
         }
-
-        // Desconta do estoque (reserva) o que este carrinho tem agora, reconciliando
-        // com o que já segurava. Devolução ocorre na exclusão manual ou no checkout.
-        Biju_Stock_Holds::hold_for_cart( $ident, array_values( $normalized ) );
 
         global $wpdb;
         $table     = self::table();
         $now       = current_time( 'mysql' );
         $cart_data = maybe_serialize( $normalized );
-
-        $existing_id = self::find_existing_id( $user_id, $email, $phone );
 
         $data = [
             'user_id'       => $user_id > 0 ? $user_id : null,
@@ -113,16 +108,17 @@ class Biju_Abandoned_Cart {
         $formats = [ '%d', '%s', '%s', '%s', '%s', '%s', '%d' ];
 
         if ( $existing_id ) {
-            $wpdb->update(
-                $table,
-                $data,
-                [ 'id' => $existing_id ],
-                $formats,
-                [ '%d' ]
-            );
+            $wpdb->update( $table, $data, [ 'id' => $existing_id ], $formats, [ '%d' ] );
+            $cart_id = (int) $existing_id;
         } else {
             $wpdb->insert( $table, $data, $formats );
+            $cart_id = (int) $wpdb->insert_id;
         }
+
+        // Desconta do estoque (reserva) o que este carrinho tem agora, indexado
+        // pelo id ESTÁVEL da linha. Devolução: exclusão manual, checkout, pedido
+        // pago ou reconciliação (cart sumiu).
+        Biju_Stock_Holds::hold_for_cart( $cart_id, array_values( $normalized ) );
 
         return rest_ensure_response( [
             'success'   => true,
@@ -148,8 +144,8 @@ class Biju_Abandoned_Cart {
 
         global $wpdb;
         $table = self::table();
-        $row   = $wpdb->get_var( $wpdb->prepare(
-            "SELECT cart_data FROM {$table} WHERE user_id = %d LIMIT 1",
+        $row   = $wpdb->get_row( $wpdb->prepare(
+            "SELECT id, cart_data FROM {$table} WHERE user_id = %d LIMIT 1",
             $user_id
         ) );
 
@@ -157,8 +153,8 @@ class Biju_Abandoned_Cart {
             return rest_ensure_response( [ 'items' => [] ] );
         }
 
-        $held = Biju_Stock_Holds::held_map( Biju_Stock_Holds::ident( $user_id ) );
-        return rest_ensure_response( [ 'items' => self::hydrate_cart_data( $row, $held ) ] );
+        $held = Biju_Stock_Holds::held_map( (int) $row->id );
+        return rest_ensure_response( [ 'items' => self::hydrate_cart_data( $row->cart_data, $held ) ] );
     }
 
     /**
@@ -186,7 +182,7 @@ class Biju_Abandoned_Cart {
         global $wpdb;
         $table = self::table();
         $row   = $wpdb->get_row( $wpdb->prepare(
-            "SELECT cart_data, name, user_id, email, phone FROM {$table} WHERE id = %d LIMIT 1",
+            "SELECT cart_data, name FROM {$table} WHERE id = %d LIMIT 1",
             $cart_id
         ) );
 
@@ -194,11 +190,7 @@ class Biju_Abandoned_Cart {
             return rest_ensure_response( [ 'items' => [], 'found' => false ] );
         }
 
-        $held = Biju_Stock_Holds::held_map( Biju_Stock_Holds::ident(
-            (int) $row->user_id,
-            (string) ( $row->email ?? '' ),
-            (string) ( $row->phone ?? '' )
-        ) );
+        $held = Biju_Stock_Holds::held_map( $cart_id );
         return rest_ensure_response( [
             'items' => self::hydrate_cart_data( $row->cart_data, $held ),
             'name'  => $row->name ?: null,
@@ -329,6 +321,34 @@ class Biju_Abandoned_Cart {
         return null;
     }
 
+    /**
+     * Todos os ids de carrinho que casam com o identificador (pode haver mais de
+     * um: linha por email + linha por phone). Usado para liberar o hold nos
+     * caminhos que sabem o cliente mas não o id (checkout, pedido pago).
+     * @return int[]
+     */
+    public static function find_all_ids( int $user_id, string $email = '', string $phone = '' ): array {
+        global $wpdb;
+        $table = self::table();
+        $ids   = [];
+        if ( $user_id > 0 ) {
+            $ids = array_merge( $ids, $wpdb->get_col( $wpdb->prepare(
+                "SELECT id FROM {$table} WHERE user_id = %d", $user_id
+            ) ) );
+        }
+        if ( $email !== '' ) {
+            $ids = array_merge( $ids, $wpdb->get_col( $wpdb->prepare(
+                "SELECT id FROM {$table} WHERE email = %s", $email
+            ) ) );
+        }
+        if ( $phone !== '' ) {
+            $ids = array_merge( $ids, $wpdb->get_col( $wpdb->prepare(
+                "SELECT id FROM {$table} WHERE phone = %s", $phone
+            ) ) );
+        }
+        return array_values( array_unique( array_map( 'intval', $ids ) ) );
+    }
+
     public static function delete_for( int $user_id, string $email = '', string $phone = '' ): void {
         global $wpdb;
         $table = self::table();
@@ -362,6 +382,14 @@ class Biju_Abandoned_Cart {
         $user_id = (int) $order->get_user_id();
         $email   = sanitize_email( $order->get_billing_email() );
         $phone   = self::normalize_phone( $order->get_billing_phone() );
+
+        // Pedido pago: o Woo já baixou o estoque pelo pedido. Se ainda houver hold
+        // deste carrinho (ex.: pedido criado por um caminho que não passou pelo
+        // release do checkout), devolvemos o hold ANTES de apagar a linha — senão
+        // o estoque ficaria baixado 2x e não voltaria.
+        foreach ( self::find_all_ids( $user_id, $email, $phone ) as $cid ) {
+            Biju_Stock_Holds::release_for_cart( $cid );
+        }
 
         self::delete_for( $user_id, $email, $phone );
     }

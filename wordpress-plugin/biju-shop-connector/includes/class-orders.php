@@ -108,14 +108,13 @@ class Biju_Orders {
         // por ter o carrinho salvo, LIBERAMOS agora — o pedido vai reservar e
         // baixar o estoque pelo fluxo normal do Woo logo abaixo. Sem isso,
         // baixaríamos 2x (hold + pedido) e a checagem de estoque abaixo veria o
-        // estoque já zerado pela própria reserva do cliente, barrando-o. Cobre as
-        // 3 formas de identificar o carrinho (user, email, phone).
-        if ( class_exists( 'Biju_Stock_Holds' ) ) {
-            $b_email = sanitize_email( $billing['email'] ?? '' );
-            $b_phone = sanitize_text_field( $billing['phone'] ?? '' );
-            Biju_Stock_Holds::release_for_cart( Biju_Stock_Holds::ident( (int) $user_id ) );
-            Biju_Stock_Holds::release_for_cart( Biju_Stock_Holds::ident( 0, $b_email ) );
-            Biju_Stock_Holds::release_for_cart( Biju_Stock_Holds::ident( 0, '', $b_phone ) );
+        // estoque já zerado pela própria reserva do cliente, barrando-o. Liberamos
+        // por id da linha do carrinho (cobre user, email e phone).
+        if ( class_exists( 'Biju_Stock_Holds' ) && class_exists( 'Biju_Abandoned_Cart' ) ) {
+            $b_email  = sanitize_email( $billing['email'] ?? '' );
+            $b_phone  = preg_replace( '/\D/', '', sanitize_text_field( $billing['phone'] ?? '' ) );
+            $cart_ids = Biju_Abandoned_Cart::find_all_ids( (int) $user_id, $b_email, (string) $b_phone );
+            Biju_Stock_Holds::release_for_carts( $cart_ids );
         }
 
         // Itens do carrinho
