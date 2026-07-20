@@ -3,6 +3,7 @@ import { toast } from "sonner";
 import { Product } from "@/data/products";
 import { saveAbandonedCart, clearAbandonedCart, fetchSavedCart, recoverCart } from "@/services/abandonedCart";
 import { getAuthToken } from "@/services/api";
+import { checkStock } from "@/services/stock";
 
 export interface CartItem {
   product: Product;
@@ -100,6 +101,7 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children
   // o registro de abandonado no servidor (só some quando o pagamento confirma).
   const suppressSync = useRef(false);
   const syncTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const stockCheckTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isFirstRun = useRef(true);
 
   const addItem = useCallback(
@@ -280,6 +282,52 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children
       if (syncTimer.current) clearTimeout(syncTimer.current);
     };
   }, [items, guestContact]);
+
+  // Validação de estoque em tempo real (fora do checkout). Sempre que o carrinho
+  // muda, consulta o estoque REAL no servidor e ajusta:
+  //  - pediu mais do que há disponível → limita à quantidade disponível + avisa;
+  //  - estoque zero → remove o item do carrinho e informa o motivo.
+  // O backend considera o que o PRÓPRIO carrinho segura (hold), então o dono não
+  // perde o que ele mesmo reservou. Debounce curto (500ms) para ser quase imediato
+  // sem disparar a cada clique de +/-.
+  useEffect(() => {
+    if (items.length === 0) return;
+    if (stockCheckTimer.current) clearTimeout(stockCheckTimer.current);
+    stockCheckTimer.current = setTimeout(async () => {
+      try {
+        const results = await checkStock(
+          items.map((i) => ({
+            product_id: Number(i.product.id),
+            variation_id: i.variationId,
+            quantity: i.quantity,
+          })),
+          guestContact,
+        );
+        const byKey = new Map(
+          results.map((r) => [`${r.product_id}:${r.variation_id ?? 0}`, r]),
+        );
+        for (const it of items) {
+          const r = byKey.get(`${Number(it.product.id)}:${it.variationId ?? 0}`);
+          if (!r || r.unlimited || r.available === null) continue;
+          if (r.available >= it.quantity) continue;
+          if (r.available <= 0) {
+            removeItem(it.product.id, it.variationId);
+            toast.error(`${it.product.name} ficou sem estoque e foi removido do carrinho.`);
+          } else {
+            updateQuantity(it.product.id, r.available, it.variationId);
+            toast.error(
+              `Só temos ${r.available} de ${it.product.name} em estoque — ajustamos a quantidade.`,
+            );
+          }
+        }
+      } catch {
+        // Erro de rede: não mexe no carrinho.
+      }
+    }, 500);
+    return () => {
+      if (stockCheckTimer.current) clearTimeout(stockCheckTimer.current);
+    };
+  }, [items, guestContact, removeItem, updateQuantity]);
 
   // Recupera o carrinho salvo na conta ao logar e mescla com o carrinho local
   // deste navegador. Regra de merge: mesma chave (product.id + variationId) →

@@ -252,6 +252,64 @@ class Biju_Stock_Holds {
 	}
 
 	// -------------------------------------------------------------------------
+	// REST: consulta de estoque em tempo real (usado pelo carrinho da loja).
+	// POST /biju/v1/stock/check  body: { items:[{product_id,variation_id,quantity}], email?, phone? }
+	// Resposta: { items:[{product_id,variation_id,available,requested,unlimited}] }
+	//
+	// `available` = estoque REAL + o que o PRÓPRIO carrinho do cliente já segura
+	// (hold), para não remover item que ele mesmo reservou. `unlimited=true` quando
+	// o produto não gerencia estoque (available vem null). Rota pública.
+	// -------------------------------------------------------------------------
+	public static function rest_check( WP_REST_Request $req ) {
+		$items   = (array) $req->get_param( 'items' );
+		$user_id = class_exists( 'Biju_Auth' ) ? (int) Biju_Auth::get_user_from_request( $req ) : 0;
+		$email   = sanitize_email( (string) $req->get_param( 'email' ) );
+		$phone   = preg_replace( '/\D/', '', (string) $req->get_param( 'phone' ) );
+
+		// Soma o hold do próprio cliente (todos os carrinhos que casam com ele).
+		$own = [];
+		if ( class_exists( 'Biju_Abandoned_Cart' ) ) {
+			foreach ( Biju_Abandoned_Cart::find_all_ids( $user_id, $email, (string) $phone ) as $cid ) {
+				foreach ( self::held_map( (int) $cid ) as $k => $q ) {
+					$own[ $k ] = ( $own[ $k ] ?? 0 ) + (int) $q;
+				}
+			}
+		}
+
+		$out = [];
+		foreach ( $items as $it ) {
+			$pid = (int) ( $it['product_id'] ?? 0 );
+			$vid = (int) ( $it['variation_id'] ?? 0 );
+			$qty = max( 1, (int) ( $it['quantity'] ?? 1 ) );
+			if ( ! $pid ) continue;
+
+			$product = $vid ? wc_get_product( $vid ) : wc_get_product( $pid );
+			if ( ! $product ) {
+				$out[] = [ 'product_id' => $pid, 'variation_id' => $vid, 'available' => 0, 'requested' => $qty, 'unlimited' => false ];
+				continue;
+			}
+			$target = self::stock_target( $pid, $vid ); // null = não gerencia estoque
+			if ( ! $target ) {
+				$out[] = [ 'product_id' => $pid, 'variation_id' => $vid, 'available' => null, 'requested' => $qty, 'unlimited' => true ];
+				continue;
+			}
+			$ownq  = (int) ( $own[ $pid . ':' . $vid ] ?? 0 );
+			$avail = max( 0, (int) $target->get_stock_quantity() + $ownq );
+			// Produto marcado "fora de estoque" e sem hold próprio → 0.
+			if ( ! $product->is_in_stock() && $ownq <= 0 ) $avail = 0;
+
+			$out[] = [
+				'product_id'   => $pid,
+				'variation_id' => $vid,
+				'available'    => $avail,
+				'requested'    => $qty,
+				'unlimited'    => false,
+			];
+		}
+		return rest_ensure_response( [ 'items' => $out ] );
+	}
+
+	// -------------------------------------------------------------------------
 	// Handlers AJAX que substituem os do plugin carrinho-abandonado.
 	// -------------------------------------------------------------------------
 

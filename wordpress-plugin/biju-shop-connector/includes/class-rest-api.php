@@ -204,6 +204,13 @@ class Biju_REST_API {
         // ---------------------------------------------------------------
         // Carrinho abandonado (espelha a tabela do plugin original a partir do React)
         // ---------------------------------------------------------------
+        // Consulta de estoque em tempo real (carrinho da loja valida no add).
+        register_rest_route( $ns, '/stock/check', [
+            'methods'             => WP_REST_Server::CREATABLE,
+            'callback'            => [ 'Biju_Stock_Holds', 'rest_check' ],
+            'permission_callback' => '__return_true',
+        ] );
+
         register_rest_route( $ns, '/cart/save', [
             [
                 'methods'             => WP_REST_Server::CREATABLE,
