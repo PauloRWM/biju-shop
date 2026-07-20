@@ -5,7 +5,8 @@
       "Read(//d/Wesley Bijoux/carrinho-abandonado/**)",
       "Bash(npm run *)",
       "Bash(cd \"d:/Wesley Bijoux\" && find . -maxdepth 4 -name \"version.php\" -path \"*wp-includes*\" 2>/dev/null | head -1 | xargs grep -h \"wp_version =\" 2>/dev/null | head -1; echo \"---\"; grep -rn \"function retrieve_password\" wp-backups/ 2>/dev/null | head -1)",
-      "Read(//d/Wesley Bijoux/**)"
+      "Read(//d/Wesley Bijoux/**)",
+      "Bash(python -c ' *)"
     ],
     "additionalDirectories": [
       "d:\\Wesley Bijoux\\carrinho-abandonado"

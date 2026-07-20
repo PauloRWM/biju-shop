@@ -152,6 +152,7 @@ require_once BIJU_CONNECTOR_PATH . 'includes/class-newsletter.php';
 require_once BIJU_CONNECTOR_PATH . 'includes/class-meta-pixel.php';
 require_once BIJU_CONNECTOR_PATH . 'includes/class-shipping.php';
 require_once BIJU_CONNECTOR_PATH . 'includes/class-coupons.php';
+require_once BIJU_CONNECTOR_PATH . 'includes/class-stock-holds.php';
 require_once BIJU_CONNECTOR_PATH . 'includes/class-abandoned-cart.php';
 require_once BIJU_CONNECTOR_PATH . 'includes/class-product-duplicator.php';
 require_once BIJU_CONNECTOR_PATH . 'includes/class-stock-monitor.php';
@@ -165,6 +166,7 @@ add_action( 'plugins_loaded', function () {
 
     Biju_CORS::init();
     Biju_Cache::init();
+    Biju_Stock_Holds::init();
     Biju_Price_Sync::init();
     Biju_Variation_Bulk_Price::init();
     Biju_Perf_Probe::init(); // diagnóstico temporário — remover depois

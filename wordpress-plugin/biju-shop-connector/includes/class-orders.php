@@ -104,6 +104,20 @@ class Biju_Orders {
             $order->update_meta_data( 'shipping_neighborhood', $s_neighborhood );
         }
 
+        // Reserva de carrinho (hold): se este cliente tinha estoque descontado
+        // por ter o carrinho salvo, LIBERAMOS agora — o pedido vai reservar e
+        // baixar o estoque pelo fluxo normal do Woo logo abaixo. Sem isso,
+        // baixaríamos 2x (hold + pedido) e a checagem de estoque abaixo veria o
+        // estoque já zerado pela própria reserva do cliente, barrando-o. Cobre as
+        // 3 formas de identificar o carrinho (user, email, phone).
+        if ( class_exists( 'Biju_Stock_Holds' ) ) {
+            $b_email = sanitize_email( $billing['email'] ?? '' );
+            $b_phone = sanitize_text_field( $billing['phone'] ?? '' );
+            Biju_Stock_Holds::release_for_cart( Biju_Stock_Holds::ident( (int) $user_id ) );
+            Biju_Stock_Holds::release_for_cart( Biju_Stock_Holds::ident( 0, $b_email ) );
+            Biju_Stock_Holds::release_for_cart( Biju_Stock_Holds::ident( 0, '', $b_phone ) );
+        }
+
         // Itens do carrinho
         foreach ( (array) $body['items'] as $item ) {
             $product_id   = absint( $item['product_id'] ?? 0 );

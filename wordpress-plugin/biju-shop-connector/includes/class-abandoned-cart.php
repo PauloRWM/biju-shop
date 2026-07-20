@@ -48,8 +48,12 @@ class Biju_Abandoned_Cart {
             return rest_ensure_response( [ 'success' => true, 'skipped' => 'no_identifier' ] );
         }
 
+        $ident = Biju_Stock_Holds::ident( $user_id, $email, $phone );
+
         $raw_items = $request->get_param( 'items' );
         if ( ! is_array( $raw_items ) || empty( $raw_items ) ) {
+            // Carrinho esvaziado → devolve o estoque que este carrinho segurava.
+            Biju_Stock_Holds::release_for_cart( $ident );
             self::delete_for( $user_id, $email, $phone );
             return rest_ensure_response( [ 'success' => true, 'cleared' => true ] );
         }
@@ -81,9 +85,14 @@ class Biju_Abandoned_Cart {
         }
 
         if ( empty( $normalized ) ) {
+            Biju_Stock_Holds::release_for_cart( $ident );
             self::delete_for( $user_id, $email, $phone );
             return rest_ensure_response( [ 'success' => true, 'cleared' => true ] );
         }
+
+        // Desconta do estoque (reserva) o que este carrinho tem agora, reconciliando
+        // com o que já segurava. Devolução ocorre na exclusão manual ou no checkout.
+        Biju_Stock_Holds::hold_for_cart( $ident, array_values( $normalized ) );
 
         global $wpdb;
         $table     = self::table();
@@ -148,7 +157,8 @@ class Biju_Abandoned_Cart {
             return rest_ensure_response( [ 'items' => [] ] );
         }
 
-        return rest_ensure_response( [ 'items' => self::hydrate_cart_data( $row ) ] );
+        $held = Biju_Stock_Holds::held_map( Biju_Stock_Holds::ident( $user_id ) );
+        return rest_ensure_response( [ 'items' => self::hydrate_cart_data( $row, $held ) ] );
     }
 
     /**
@@ -176,7 +186,7 @@ class Biju_Abandoned_Cart {
         global $wpdb;
         $table = self::table();
         $row   = $wpdb->get_row( $wpdb->prepare(
-            "SELECT cart_data, name FROM {$table} WHERE id = %d LIMIT 1",
+            "SELECT cart_data, name, user_id, email, phone FROM {$table} WHERE id = %d LIMIT 1",
             $cart_id
         ) );
 
@@ -184,8 +194,13 @@ class Biju_Abandoned_Cart {
             return rest_ensure_response( [ 'items' => [], 'found' => false ] );
         }
 
+        $held = Biju_Stock_Holds::held_map( Biju_Stock_Holds::ident(
+            (int) $row->user_id,
+            (string) ( $row->email ?? '' ),
+            (string) ( $row->phone ?? '' )
+        ) );
         return rest_ensure_response( [
-            'items' => self::hydrate_cart_data( $row->cart_data ),
+            'items' => self::hydrate_cart_data( $row->cart_data, $held ),
             'name'  => $row->name ?: null,
             'found' => true,
         ] );
@@ -199,7 +214,7 @@ class Biju_Abandoned_Cart {
      * @param string $cart_data conteúdo serializado da coluna cart_data.
      * @return array<int,array>
      */
-    private static function hydrate_cart_data( $cart_data ): array {
+    private static function hydrate_cart_data( $cart_data, array $held_map = [] ): array {
         $stored = maybe_unserialize( $cart_data );
         if ( ! is_array( $stored ) || empty( $stored ) ) {
             return [];
@@ -234,10 +249,20 @@ class Biju_Abandoned_Cart {
             // frustraria o cliente (ou geraria estoque negativo se ele fechasse).
             // Quem manda no estoque é a VARIAÇÃO quando existe; senão, o produto.
             // Revalidado aqui (não no momento em que o carrinho foi salvo) porque
-            // o link pode ser aberto dias depois. Cobre tanto o link de
-            // recuperação quanto o carrinho salvo lido no login.
+            // o link pode ser aberto dias depois.
+            //
+            // PORÉM: este carrinho pode ter DESCONTADO o estoque (reserva). Nesse
+            // caso o estoque "disponível" já está menor por causa da própria
+            // reserva do dono — a disponibilidade real para ELE é (estoque atual
+            // + o que ele mesmo segura). Sem isso, o dono não conseguiria
+            // recuperar um item que ele próprio reservou.
             $stock_ref = $variation ?: $product;
-            if ( ! $stock_ref->is_in_stock() || ! $stock_ref->has_enough_stock( $quantity ) ) {
+            $own_hold  = (int) ( $held_map[ $product_id . ':' . $variation_id ] ?? 0 );
+            $available = ( $stock_ref->get_stock_quantity() === null )
+                ? PHP_INT_MAX // não gerencia estoque (ilimitado)
+                : (int) $stock_ref->get_stock_quantity() + $own_hold;
+            $in_stock_for_owner = $own_hold > 0 || $stock_ref->is_in_stock();
+            if ( ! $in_stock_for_owner || $available < $quantity ) {
                 continue;
             }
 
