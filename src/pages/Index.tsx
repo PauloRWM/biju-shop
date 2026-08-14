@@ -15,6 +15,7 @@ import Autoplay from "embla-carousel-autoplay";
 
 type Banner = {
   image?: string;
+  imageMobile?: string;
   alt?: string;
   link?: string;
   gradient?: string;
@@ -95,7 +96,7 @@ const Index = () => {
   // Banners: usa os cadastrados no admin (via /homepage) quando houver; senão,
   // cai nos banners padrão embutidos — a home nunca fica sem carrossel.
   const activeBanners: Banner[] = homepageConfig?.banners?.length
-    ? homepageConfig.banners.map((b) => ({ image: b.image, alt: b.alt, link: b.link }))
+    ? homepageConfig.banners.map((b) => ({ image: b.image, imageMobile: b.image_mobile || undefined, alt: b.alt, link: b.link }))
     : banners;
 
   // Quando a lista de banners muda (padrão → cadastrados no admin), o número de
@@ -118,20 +119,28 @@ const Index = () => {
               <div key={index} className="flex-[0_0_100%] min-w-0">
                 {banner.image ? (
                   (() => {
+                    // Com imagem mobile própria, usa proporção retrato no celular
+                    // (a de paisagem do desktop fica ruim cortada). Sem ela, mantém 4/3.
+                    const mobileAspect = banner.imageMobile ? "aspect-[4/5]" : "aspect-[4/3]";
                     const content = (
-                      <div className="relative w-full bg-[#faf7f2] overflow-hidden aspect-[4/3] sm:aspect-[16/9] md:aspect-[1774/642]">
-                        <img
-                          src={banner.image}
-                          alt={banner.alt ?? ""}
-                          className="absolute inset-0 w-full h-full object-cover"
-                          loading={index === 0 ? "eager" : "lazy"}
-                          decoding="async"
-                          fetchPriority={index === 0 ? "high" : "low"}
-                          onError={(e) => {
-                            // se imagem falhar, oculta sem quebrar o layout
-                            (e.currentTarget as HTMLImageElement).style.opacity = "0";
-                          }}
-                        />
+                      <div className={`relative w-full bg-[#faf7f2] overflow-hidden ${mobileAspect} sm:aspect-[16/9] md:aspect-[1774/642]`}>
+                        <picture>
+                          {banner.imageMobile && (
+                            <source media="(max-width: 640px)" srcSet={banner.imageMobile} />
+                          )}
+                          <img
+                            src={banner.image}
+                            alt={banner.alt ?? ""}
+                            className="absolute inset-0 w-full h-full object-cover"
+                            loading={index === 0 ? "eager" : "lazy"}
+                            decoding="async"
+                            fetchPriority={index === 0 ? "high" : "low"}
+                            onError={(e) => {
+                              // se imagem falhar, oculta sem quebrar o layout
+                              (e.currentTarget as HTMLImageElement).style.opacity = "0";
+                            }}
+                          />
+                        </picture>
                         <div className="absolute bottom-8 right-8 md:right-12 text-foreground/30 font-display text-sm tracking-widest">
                           <span className="text-foreground/70">{String(index + 1).padStart(2, "0")}</span>
                           <span className="mx-2">/</span>

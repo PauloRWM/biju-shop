@@ -15,6 +15,8 @@ export interface HomeSection {
 
 export interface HomeBanner {
   image: string;
+  /** Imagem separada para mobile (retrato). Vazio → usa `image` no celular também. */
+  image_mobile?: string;
   /** Link opcional ao clicar (path relativo /shop?... ou URL completa). */
   link?: string;
   alt?: string;

@@ -124,14 +124,16 @@ class Biju_Homepage {
             update_option( 'biju_homepage_sections', array_values( array_map( fn( $s ) => [ 'slug' => $s ], $sec_slugs ) ) );
 
             // Banners — arrays paralelos (uma entrada por linha, alinhadas por índice).
-            $b_urls  = (array) ( $_POST['banner_image_url'] ?? [] );
-            $b_ids   = (array) ( $_POST['banner_image_id'] ?? [] );
-            $b_links = (array) ( $_POST['banner_link'] ?? [] );
-            $b_alts  = (array) ( $_POST['banner_alt'] ?? [] );
+            $b_urls   = (array) ( $_POST['banner_image_url'] ?? [] );
+            $b_ids    = (array) ( $_POST['banner_image_id'] ?? [] );
+            $b_murls  = (array) ( $_POST['banner_mobile_image_url'] ?? [] );
+            $b_mids   = (array) ( $_POST['banner_mobile_image_id'] ?? [] );
+            $b_links  = (array) ( $_POST['banner_link'] ?? [] );
+            $b_alts   = (array) ( $_POST['banner_alt'] ?? [] );
             $banners = [];
             foreach ( $b_urls as $i => $url ) {
                 $url = esc_url_raw( trim( (string) $url ) );
-                if ( ! $url ) continue; // linha sem imagem: ignora
+                if ( ! $url ) continue; // linha sem imagem (desktop): ignora
                 $link = trim( (string) ( $b_links[ $i ] ?? '' ) );
                 if ( $link !== '' ) {
                     // Aceita URL http(s) OU path relativo (/shop?cat=X); descarta o resto.
@@ -144,10 +146,12 @@ class Biju_Homepage {
                     }
                 }
                 $banners[] = [
-                    'image_id' => absint( $b_ids[ $i ] ?? 0 ),
-                    'image'    => $url,
-                    'link'     => $link,
-                    'alt'      => sanitize_text_field( (string) ( $b_alts[ $i ] ?? '' ) ),
+                    'image_id'        => absint( $b_ids[ $i ] ?? 0 ),
+                    'image'           => $url,
+                    'image_mobile_id' => absint( $b_mids[ $i ] ?? 0 ),
+                    'image_mobile'    => esc_url_raw( trim( (string) ( $b_murls[ $i ] ?? '' ) ) ),
+                    'link'            => $link,
+                    'alt'             => sanitize_text_field( (string) ( $b_alts[ $i ] ?? '' ) ),
                 ];
             }
             update_option( 'biju_home_banners', $banners );
@@ -238,34 +242,47 @@ class Biju_Homepage {
                 <!-- ── BANNERS ─────────────────────────────────────────── -->
                 <h2>Banners da Página Inicial</h2>
                 <p class="description">
-                    Imagens do carrossel no topo da home. Recomendado: <strong>~1920×1080px</strong> (paisagem), .jpg/.webp.<br>
-                    O <strong>link</strong> é opcional — pode ser um caminho do site (ex.: <code>/shop?cat=Colares</code>) ou uma URL completa. Sem banner cadastrado, a home usa os banners padrão.
+                    Imagens do carrossel no topo da home.<br>
+                    • <strong>Desktop</strong>: paisagem, ~<strong>1920×1080px</strong> (.jpg/.webp).<br>
+                    • <strong>Mobile</strong> (opcional): retrato/quadrado, ~<strong>1080×1350px</strong>. Se não enviar, o celular usa a imagem de desktop.<br>
+                    O <strong>link</strong> é opcional — caminho do site (ex.: <code>/shop?cat=Colares</code>) ou URL completa. Sem banner cadastrado, a home usa os banners padrão.
                 </p>
 
                 <?php
                 $banners_cfg = get_option( 'biju_home_banners', [] );
                 if ( ! is_array( $banners_cfg ) ) $banners_cfg = [];
                 ?>
-                <table class="widefat striped" id="biju-banners-table" style="max-width:900px;margin-top:12px">
+                <table class="widefat striped" id="biju-banners-table" style="max-width:980px;margin-top:12px">
                     <thead>
                         <tr>
-                            <th style="width:230px">Imagem</th>
+                            <th style="width:200px">Imagem (desktop)</th>
+                            <th style="width:200px">Imagem (mobile)</th>
                             <th>Link (opcional)</th>
-                            <th style="width:180px">Texto alternativo</th>
+                            <th style="width:150px">Texto alt.</th>
                             <th style="width:90px"></th>
                         </tr>
                     </thead>
                     <tbody>
                         <?php foreach ( $banners_cfg as $b ) :
-                            $img = esc_url( $b['image'] ?? '' ); ?>
+                            $img  = esc_url( $b['image'] ?? '' );
+                            $mimg = esc_url( $b['image_mobile'] ?? '' ); ?>
                         <tr>
                             <td>
                                 <div class="biju-banner-preview" style="margin-bottom:6px">
-                                    <?php if ( $img ) : ?><img src="<?php echo $img; ?>" style="max-width:200px;height:auto;display:block;border:1px solid #ddd;border-radius:4px"><?php endif; ?>
+                                    <?php if ( $img ) : ?><img src="<?php echo $img; ?>" style="max-width:180px;height:auto;display:block;border:1px solid #ddd;border-radius:4px"><?php endif; ?>
                                 </div>
                                 <input type="hidden" name="banner_image_id[]" value="<?php echo absint( $b['image_id'] ?? 0 ); ?>">
                                 <input type="hidden" name="banner_image_url[]" value="<?php echo esc_attr( $b['image'] ?? '' ); ?>">
-                                <button type="button" class="button biju-pick-image"><?php echo $img ? 'Trocar imagem' : 'Selecionar imagem'; ?></button>
+                                <button type="button" class="button biju-pick-image"><?php echo $img ? 'Trocar' : 'Selecionar'; ?></button>
+                            </td>
+                            <td>
+                                <div class="biju-banner-mobile-preview" style="margin-bottom:6px">
+                                    <?php if ( $mimg ) : ?><img src="<?php echo $mimg; ?>" style="max-width:110px;height:auto;display:block;border:1px solid #ddd;border-radius:4px"><?php endif; ?>
+                                </div>
+                                <input type="hidden" name="banner_mobile_image_id[]" value="<?php echo absint( $b['image_mobile_id'] ?? 0 ); ?>">
+                                <input type="hidden" name="banner_mobile_image_url[]" value="<?php echo esc_attr( $b['image_mobile'] ?? '' ); ?>">
+                                <button type="button" class="button biju-pick-mobile"><?php echo $mimg ? 'Trocar' : 'Selecionar'; ?></button>
+                                <?php if ( $mimg ) : ?><button type="button" class="button-link biju-clear-mobile" style="display:block;color:#b32d2e;margin-top:4px;font-size:11px">remover mobile</button><?php endif; ?>
                             </td>
                             <td><input type="text" name="banner_link[]" value="<?php echo esc_attr( $b['link'] ?? '' ); ?>" placeholder="/shop?cat=Colares" style="width:100%"></td>
                             <td><input type="text" name="banner_alt[]" value="<?php echo esc_attr( $b['alt'] ?? '' ); ?>" placeholder="descrição" style="width:100%"></td>
@@ -304,7 +321,13 @@ class Biju_Homepage {
                     <div class="biju-banner-preview" style="margin-bottom:6px"></div>
                     <input type="hidden" name="banner_image_id[]" value="">
                     <input type="hidden" name="banner_image_url[]" value="">
-                    <button type="button" class="button biju-pick-image">Selecionar imagem</button>
+                    <button type="button" class="button biju-pick-image">Selecionar</button>
+                </td>
+                <td>
+                    <div class="biju-banner-mobile-preview" style="margin-bottom:6px"></div>
+                    <input type="hidden" name="banner_mobile_image_id[]" value="">
+                    <input type="hidden" name="banner_mobile_image_url[]" value="">
+                    <button type="button" class="button biju-pick-mobile">Selecionar</button>
                 </td>
                 <td><input type="text" name="banner_link[]" value="" placeholder="/shop?cat=Colares" style="width:100%"></td>
                 <td><input type="text" name="banner_alt[]" value="" placeholder="descrição" style="width:100%"></td>
@@ -317,24 +340,41 @@ class Biju_Homepage {
             document.querySelector('#biju-banners-table tbody').insertAdjacentHTML('beforeend', bijuBannerRow());
         });
 
+        // Abre a Biblioteca de Mídia e preenche os campos de UMA célula (desktop
+        // ou mobile) conforme os nomes/preview passados.
+        function bijuPickMedia(btn, idName, urlName, previewSel, maxW) {
+            var cell = btn.closest('td');
+            var frame = wp.media({ title: 'Selecionar imagem', button: { text: 'Usar esta imagem' }, library: { type: 'image' }, multiple: false });
+            frame.on('select', function () {
+                var att = frame.state().get('selection').first().toJSON();
+                var url = (att.sizes && att.sizes.large) ? att.sizes.large.url : att.url;
+                cell.querySelector('input[name="' + idName + '"]').value  = att.id;
+                cell.querySelector('input[name="' + urlName + '"]').value = url;
+                cell.querySelector(previewSel).innerHTML =
+                    '<img src="' + url + '" style="max-width:' + maxW + 'px;height:auto;display:block;border:1px solid #ddd;border-radius:4px">';
+                btn.textContent = 'Trocar';
+            });
+            frame.open();
+        }
+
         document.addEventListener('click', e => {
             if ( e.target.classList.contains('biju-remove-banner') ) { e.target.closest('tr').remove(); return; }
             if ( e.target.classList.contains('biju-pick-image') ) {
                 e.preventDefault();
-                var btn  = e.target;
-                var cell = btn.closest('td');
-                var frame = wp.media({ title: 'Selecionar banner', button: { text: 'Usar esta imagem' }, library: { type: 'image' }, multiple: false });
-                frame.on('select', function () {
-                    var att = frame.state().get('selection').first().toJSON();
-                    // Prefere um tamanho grande, mas cai pro full se não houver.
-                    var url = (att.sizes && att.sizes.large) ? att.sizes.large.url : att.url;
-                    cell.querySelector('input[name="banner_image_id[]"]').value  = att.id;
-                    cell.querySelector('input[name="banner_image_url[]"]').value = url;
-                    cell.querySelector('.biju-banner-preview').innerHTML =
-                        '<img src="' + url + '" style="max-width:200px;height:auto;display:block;border:1px solid #ddd;border-radius:4px">';
-                    btn.textContent = 'Trocar imagem';
-                });
-                frame.open();
+                bijuPickMedia( e.target, 'banner_image_id[]', 'banner_image_url[]', '.biju-banner-preview', 180 );
+            }
+            if ( e.target.classList.contains('biju-pick-mobile') ) {
+                e.preventDefault();
+                bijuPickMedia( e.target, 'banner_mobile_image_id[]', 'banner_mobile_image_url[]', '.biju-banner-mobile-preview', 110 );
+            }
+            if ( e.target.classList.contains('biju-clear-mobile') ) {
+                e.preventDefault();
+                var cell = e.target.closest('td');
+                cell.querySelector('input[name="banner_mobile_image_id[]"]').value  = '';
+                cell.querySelector('input[name="banner_mobile_image_url[]"]').value = '';
+                cell.querySelector('.biju-banner-mobile-preview').innerHTML = '';
+                var pick = cell.querySelector('.biju-pick-mobile'); if ( pick ) pick.textContent = 'Selecionar';
+                e.target.remove();
             }
         });
         </script>
@@ -358,9 +398,10 @@ class Biju_Homepage {
             $img = isset( $b['image'] ) ? esc_url_raw( (string) $b['image'] ) : '';
             if ( ! $img ) continue;
             $out[] = [
-                'image' => $img,
-                'link'  => isset( $b['link'] ) ? (string) $b['link'] : '',
-                'alt'   => isset( $b['alt'] ) ? (string) $b['alt'] : '',
+                'image'        => $img,
+                'image_mobile' => isset( $b['image_mobile'] ) ? esc_url_raw( (string) $b['image_mobile'] ) : '',
+                'link'         => isset( $b['link'] ) ? (string) $b['link'] : '',
+                'alt'          => isset( $b['alt'] ) ? (string) $b['alt'] : '',
             ];
         }
         return $out;
