@@ -152,9 +152,16 @@ class Biju_Homepage {
             }
             update_option( 'biju_home_banners', $banners );
 
-            // Invalida o cache da /homepage imediatamente (cobre add e update).
+            // Invalida o cache da /homepage imediatamente. O bump_version sozinho
+            // NÃO é confiável com o Redis Object Cache ativo (alguns requests ainda
+            // leem a versão antiga → servem banners obsoletos). Como salvar a home
+            // é uma ação de admin RARA, um flush do object cache aqui garante que a
+            // mudança apareça na hora, sem impacto perceptível de performance.
             if ( class_exists( 'Biju_Cache' ) ) {
                 Biju_Cache::bump_version();
+            }
+            if ( function_exists( 'wp_cache_flush' ) ) {
+                wp_cache_flush();
             }
 
             $saved = true;
