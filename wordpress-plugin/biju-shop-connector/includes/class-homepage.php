@@ -65,6 +65,7 @@ class Biju_Homepage {
             return [
                 'menu'     => $menu,
                 'sections' => $enriched,
+                'banners'  => self::get_banners(),
             ];
         } );
 
@@ -112,12 +113,50 @@ class Biju_Homepage {
     public static function render_page(): void {
         if ( ! current_user_can( 'manage_options' ) ) return;
 
+        // Habilita o seletor da Biblioteca de Mídia (wp.media) nesta página.
+        wp_enqueue_media();
+
         $saved = false;
         if ( isset( $_POST['biju_save_homepage'] ) && check_admin_referer( 'biju_homepage' ) ) {
             update_option( 'biju_nav_menu_id', absint( $_POST['biju_nav_menu_id'] ?? 0 ) );
 
             $sec_slugs = array_filter( array_map( 'sanitize_text_field', (array) ( $_POST['section_slug'] ?? [] ) ) );
             update_option( 'biju_homepage_sections', array_values( array_map( fn( $s ) => [ 'slug' => $s ], $sec_slugs ) ) );
+
+            // Banners — arrays paralelos (uma entrada por linha, alinhadas por índice).
+            $b_urls  = (array) ( $_POST['banner_image_url'] ?? [] );
+            $b_ids   = (array) ( $_POST['banner_image_id'] ?? [] );
+            $b_links = (array) ( $_POST['banner_link'] ?? [] );
+            $b_alts  = (array) ( $_POST['banner_alt'] ?? [] );
+            $banners = [];
+            foreach ( $b_urls as $i => $url ) {
+                $url = esc_url_raw( trim( (string) $url ) );
+                if ( ! $url ) continue; // linha sem imagem: ignora
+                $link = trim( (string) ( $b_links[ $i ] ?? '' ) );
+                if ( $link !== '' ) {
+                    // Aceita URL http(s) OU path relativo (/shop?cat=X); descarta o resto.
+                    if ( preg_match( '#^https?://#i', $link ) ) {
+                        $link = esc_url_raw( $link );
+                    } elseif ( $link[0] === '/' ) {
+                        $link = sanitize_text_field( $link );
+                    } else {
+                        $link = '';
+                    }
+                }
+                $banners[] = [
+                    'image_id' => absint( $b_ids[ $i ] ?? 0 ),
+                    'image'    => $url,
+                    'link'     => $link,
+                    'alt'      => sanitize_text_field( (string) ( $b_alts[ $i ] ?? '' ) ),
+                ];
+            }
+            update_option( 'biju_home_banners', $banners );
+
+            // Invalida o cache da /homepage imediatamente (cobre add e update).
+            if ( class_exists( 'Biju_Cache' ) ) {
+                Biju_Cache::bump_version();
+            }
+
             $saved = true;
         }
 
@@ -187,6 +226,49 @@ class Biju_Homepage {
                 </table>
                 <p><button type="button" class="button" id="biju-add-section">+ Adicionar seção</button></p>
 
+                <hr style="margin:32px 0">
+
+                <!-- ── BANNERS ─────────────────────────────────────────── -->
+                <h2>Banners da Página Inicial</h2>
+                <p class="description">
+                    Imagens do carrossel no topo da home. Recomendado: <strong>~1920×1080px</strong> (paisagem), .jpg/.webp.<br>
+                    O <strong>link</strong> é opcional — pode ser um caminho do site (ex.: <code>/shop?cat=Colares</code>) ou uma URL completa. Sem banner cadastrado, a home usa os banners padrão.
+                </p>
+
+                <?php
+                $banners_cfg = get_option( 'biju_home_banners', [] );
+                if ( ! is_array( $banners_cfg ) ) $banners_cfg = [];
+                ?>
+                <table class="widefat striped" id="biju-banners-table" style="max-width:900px;margin-top:12px">
+                    <thead>
+                        <tr>
+                            <th style="width:230px">Imagem</th>
+                            <th>Link (opcional)</th>
+                            <th style="width:180px">Texto alternativo</th>
+                            <th style="width:90px"></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <?php foreach ( $banners_cfg as $b ) :
+                            $img = esc_url( $b['image'] ?? '' ); ?>
+                        <tr>
+                            <td>
+                                <div class="biju-banner-preview" style="margin-bottom:6px">
+                                    <?php if ( $img ) : ?><img src="<?php echo $img; ?>" style="max-width:200px;height:auto;display:block;border:1px solid #ddd;border-radius:4px"><?php endif; ?>
+                                </div>
+                                <input type="hidden" name="banner_image_id[]" value="<?php echo absint( $b['image_id'] ?? 0 ); ?>">
+                                <input type="hidden" name="banner_image_url[]" value="<?php echo esc_attr( $b['image'] ?? '' ); ?>">
+                                <button type="button" class="button biju-pick-image"><?php echo $img ? 'Trocar imagem' : 'Selecionar imagem'; ?></button>
+                            </td>
+                            <td><input type="text" name="banner_link[]" value="<?php echo esc_attr( $b['link'] ?? '' ); ?>" placeholder="/shop?cat=Colares" style="width:100%"></td>
+                            <td><input type="text" name="banner_alt[]" value="<?php echo esc_attr( $b['alt'] ?? '' ); ?>" placeholder="descrição" style="width:100%"></td>
+                            <td><button type="button" class="button biju-remove-banner">✕ Remover</button></td>
+                        </tr>
+                        <?php endforeach; ?>
+                    </tbody>
+                </table>
+                <p><button type="button" class="button" id="biju-add-banner">+ Adicionar banner</button></p>
+
                 <?php submit_button( 'Salvar', 'primary', 'biju_save_homepage' ); ?>
             </form>
         </div>
@@ -207,6 +289,47 @@ class Biju_Homepage {
         document.addEventListener('click', e => {
             if ( e.target.classList.contains('biju-remove') ) e.target.closest('tr').remove();
         });
+
+        // ── Banners ──────────────────────────────────────────────────────
+        function bijuBannerRow() {
+            return `<tr>
+                <td>
+                    <div class="biju-banner-preview" style="margin-bottom:6px"></div>
+                    <input type="hidden" name="banner_image_id[]" value="">
+                    <input type="hidden" name="banner_image_url[]" value="">
+                    <button type="button" class="button biju-pick-image">Selecionar imagem</button>
+                </td>
+                <td><input type="text" name="banner_link[]" value="" placeholder="/shop?cat=Colares" style="width:100%"></td>
+                <td><input type="text" name="banner_alt[]" value="" placeholder="descrição" style="width:100%"></td>
+                <td><button type="button" class="button biju-remove-banner">✕ Remover</button></td>
+            </tr>`;
+        }
+
+        var addBanner = document.getElementById('biju-add-banner');
+        if ( addBanner ) addBanner.addEventListener('click', () => {
+            document.querySelector('#biju-banners-table tbody').insertAdjacentHTML('beforeend', bijuBannerRow());
+        });
+
+        document.addEventListener('click', e => {
+            if ( e.target.classList.contains('biju-remove-banner') ) { e.target.closest('tr').remove(); return; }
+            if ( e.target.classList.contains('biju-pick-image') ) {
+                e.preventDefault();
+                var btn  = e.target;
+                var cell = btn.closest('td');
+                var frame = wp.media({ title: 'Selecionar banner', button: { text: 'Usar esta imagem' }, library: { type: 'image' }, multiple: false });
+                frame.on('select', function () {
+                    var att = frame.state().get('selection').first().toJSON();
+                    // Prefere um tamanho grande, mas cai pro full se não houver.
+                    var url = (att.sizes && att.sizes.large) ? att.sizes.large.url : att.url;
+                    cell.querySelector('input[name="banner_image_id[]"]').value  = att.id;
+                    cell.querySelector('input[name="banner_image_url[]"]').value = url;
+                    cell.querySelector('.biju-banner-preview').innerHTML =
+                        '<img src="' + url + '" style="max-width:200px;height:auto;display:block;border:1px solid #ddd;border-radius:4px">';
+                    btn.textContent = 'Trocar imagem';
+                });
+                frame.open();
+            }
+        });
         </script>
         <?php
     }
@@ -214,6 +337,27 @@ class Biju_Homepage {
     // -------------------------------------------------------------------------
     // Helpers
     // -------------------------------------------------------------------------
+
+    /**
+     * Banners do carrossel da home, configurados no admin (option biju_home_banners).
+     * Retorna [{ image, link, alt }] só com os que têm imagem. Vazio → o front usa
+     * os banners padrão embutidos (nunca deixa a home sem banner).
+     */
+    private static function get_banners(): array {
+        $raw = get_option( 'biju_home_banners', [] );
+        if ( ! is_array( $raw ) ) return [];
+        $out = [];
+        foreach ( $raw as $b ) {
+            $img = isset( $b['image'] ) ? esc_url_raw( (string) $b['image'] ) : '';
+            if ( ! $img ) continue;
+            $out[] = [
+                'image' => $img,
+                'link'  => isset( $b['link'] ) ? (string) $b['link'] : '',
+                'alt'   => isset( $b['alt'] ) ? (string) $b['alt'] : '',
+            ];
+        }
+        return $out;
+    }
 
     private static function cat_select( string $name, string $selected, array $cats ): void {
         echo '<select name="' . esc_attr( $name ) . '">';

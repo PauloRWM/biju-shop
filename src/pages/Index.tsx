@@ -16,6 +16,7 @@ import Autoplay from "embla-carousel-autoplay";
 type Banner = {
   image?: string;
   alt?: string;
+  link?: string;
   gradient?: string;
   accentColor?: string;
   tag?: string;
@@ -91,6 +92,18 @@ const Index = () => {
     ? [{ name: "Todos", slug: "todos", count: 0 }, ...catArray]
     : fallbackCategories.map(c => ({ name: c, slug: c.toLowerCase(), count: 0 }));
 
+  // Banners: usa os cadastrados no admin (via /homepage) quando houver; senão,
+  // cai nos banners padrão embutidos — a home nunca fica sem carrossel.
+  const activeBanners: Banner[] = homepageConfig?.banners?.length
+    ? homepageConfig.banners.map((b) => ({ image: b.image, alt: b.alt, link: b.link }))
+    : banners;
+
+  // Quando a lista de banners muda (padrão → cadastrados no admin), o número de
+  // slides muda; o Embla precisa reinicializar para os snaps/bolinhas baterem.
+  useEffect(() => {
+    if (emblaApi) emblaApi.reInit();
+  }, [emblaApi, activeBanners.length]);
+
   const scrollPrev = () => emblaApi && emblaApi.scrollPrev();
   const scrollNext = () => emblaApi && emblaApi.scrollNext();
   const scrollTo = (index: number) => emblaApi && emblaApi.scrollTo(index);
@@ -101,28 +114,37 @@ const Index = () => {
       <section className="relative">
         <div className="overflow-hidden" ref={emblaRef}>
           <div className="flex">
-            {banners.map((banner, index) => (
+            {activeBanners.map((banner, index) => (
               <div key={index} className="flex-[0_0_100%] min-w-0">
                 {banner.image ? (
-                  <div className="relative w-full bg-[#faf7f2] overflow-hidden aspect-[4/3] sm:aspect-[16/9] md:aspect-[1774/642]">
-                    <img
-                      src={banner.image}
-                      alt={banner.alt ?? ""}
-                      className="absolute inset-0 w-full h-full object-cover"
-                      loading={index === 0 ? "eager" : "lazy"}
-                      decoding="async"
-                      fetchPriority={index === 0 ? "high" : "low"}
-                      onError={(e) => {
-                        // se imagem falhar, oculta sem quebrar o layout
-                        (e.currentTarget as HTMLImageElement).style.opacity = "0";
-                      }}
-                    />
-                    <div className="absolute bottom-8 right-8 md:right-12 text-foreground/30 font-display text-sm tracking-widest">
-                      <span className="text-foreground/70">{String(index + 1).padStart(2, "0")}</span>
-                      <span className="mx-2">/</span>
-                      <span>{String(banners.length).padStart(2, "0")}</span>
-                    </div>
-                  </div>
+                  (() => {
+                    const content = (
+                      <div className="relative w-full bg-[#faf7f2] overflow-hidden aspect-[4/3] sm:aspect-[16/9] md:aspect-[1774/642]">
+                        <img
+                          src={banner.image}
+                          alt={banner.alt ?? ""}
+                          className="absolute inset-0 w-full h-full object-cover"
+                          loading={index === 0 ? "eager" : "lazy"}
+                          decoding="async"
+                          fetchPriority={index === 0 ? "high" : "low"}
+                          onError={(e) => {
+                            // se imagem falhar, oculta sem quebrar o layout
+                            (e.currentTarget as HTMLImageElement).style.opacity = "0";
+                          }}
+                        />
+                        <div className="absolute bottom-8 right-8 md:right-12 text-foreground/30 font-display text-sm tracking-widest">
+                          <span className="text-foreground/70">{String(index + 1).padStart(2, "0")}</span>
+                          <span className="mx-2">/</span>
+                          <span>{String(activeBanners.length).padStart(2, "0")}</span>
+                        </div>
+                      </div>
+                    );
+                    if (!banner.link) return content;
+                    // Link externo (http) → <a>; caminho interno (/shop...) → Link do router.
+                    return /^https?:\/\//i.test(banner.link)
+                      ? <a href={banner.link} className="block">{content}</a>
+                      : <Link to={banner.link} className="block">{content}</Link>;
+                  })()
                 ) : (
                   <div className={`relative h-[70vh] md:h-[600px] min-h-[480px] bg-gradient-to-br ${banner.gradient} flex items-center overflow-hidden`}>
                     <div className="absolute inset-0 opacity-[0.03]" style={{ backgroundImage: 'radial-gradient(circle at 1px 1px, white 1px, transparent 0)', backgroundSize: '40px 40px' }} />
@@ -161,7 +183,7 @@ const Index = () => {
                     <div className="absolute bottom-8 right-8 md:right-12 text-white/20 font-display text-sm tracking-widest">
                       <span className="text-white/60">{String(index + 1).padStart(2, "0")}</span>
                       <span className="mx-2">/</span>
-                      <span>{String(banners.length).padStart(2, "0")}</span>
+                      <span>{String(activeBanners.length).padStart(2, "0")}</span>
                     </div>
                   </div>
                 )}
@@ -180,7 +202,7 @@ const Index = () => {
         </div>
 
         <div className="absolute bottom-8 left-1/2 -translate-x-1/2 flex gap-4 z-10">
-          {banners.map((_, i) => (
+          {activeBanners.map((_, i) => (
             <button key={i} onClick={() => scrollTo(i)} className="group relative h-6 flex items-center" aria-label={`Slide ${i + 1}`}>
               <span className={`block h-[2px] transition-all duration-700 ${selectedIndex === i ? "w-12 bg-white" : "w-6 bg-white/20 group-hover:bg-white/40"}`} />
             </button>

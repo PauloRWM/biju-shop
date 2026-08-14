@@ -43,6 +43,10 @@ class Biju_Cache {
         // Configuração da homepage/menu (admin)
         add_action( 'update_option_biju_homepage_sections', $bump );
         add_action( 'update_option_biju_nav_menu_id',        $bump );
+        add_action( 'update_option_biju_home_banners',       $bump );
+        // add_option_* cobre o PRIMEIRO cadastro (option ainda não existia) —
+        // update_option_* só dispara quando a option já existe e muda.
+        add_action( 'add_option_biju_home_banners',          $bump );
     }
 
     /**
