@@ -1,5 +1,5 @@
-import { useState, useEffect, useCallback, useRef } from "react";
-import { Link, useSearchParams } from "react-router-dom";
+import { useState, useEffect, useCallback, useRef, type MouseEvent } from "react";
+import { Link, useSearchParams, useNavigate } from "react-router-dom";
 import Layout from "@/components/layout/Layout";
 import ProductCard from "@/components/ProductCard";
 import LoadingSpinner from "@/components/LoadingSpinner";
@@ -105,6 +105,44 @@ const Index = () => {
     if (emblaApi) emblaApi.reInit();
   }, [emblaApi, activeBanners.length]);
 
+  const navigate = useNavigate();
+
+  // Clique no banner com link. O carrossel (Embla) usa pointer events para
+  // arrastar, então detectamos manualmente se foi CLIQUE ou ARRASTO comparando a
+  // posição entre o pointerdown e o clique. Se foi arrasto, ignora; se foi clique,
+  // navegamos nós: link do próprio site vira navegação SPA (sem reload); externo
+  // abre normal. (Embla v8 não tem clickAllowed(), por isso a detecção manual.)
+  const bannerPointerStart = useRef<{ x: number; y: number } | null>(null);
+
+  const handleBannerPointerDown = (e: MouseEvent) => {
+    bannerPointerStart.current = { x: e.clientX, y: e.clientY };
+  };
+
+  const handleBannerClick = (e: MouseEvent, link?: string) => {
+    if (!link) return;
+    const start = bannerPointerStart.current;
+    if (start && (Math.abs(e.clientX - start.x) > 8 || Math.abs(e.clientY - start.y) > 8)) {
+      e.preventDefault();
+      return; // foi arrasto do carrossel, não navega
+    }
+    let internalPath: string | null = null;
+    if (/^https?:\/\//i.test(link)) {
+      try {
+        const u = new URL(link);
+        if (u.origin === window.location.origin) internalPath = u.pathname + u.search + u.hash;
+      } catch {
+        /* URL inválida: deixa o <a> tentar */
+      }
+    } else if (link.startsWith("/")) {
+      internalPath = link;
+    }
+    if (internalPath) {
+      e.preventDefault();
+      navigate(internalPath);
+    }
+    // link externo (outra origem): não previne — o <a href> abre normal.
+  };
+
   const scrollPrev = () => emblaApi && emblaApi.scrollPrev();
   const scrollNext = () => emblaApi && emblaApi.scrollNext();
   const scrollTo = (index: number) => emblaApi && emblaApi.scrollTo(index);
@@ -149,10 +187,18 @@ const Index = () => {
                       </div>
                     );
                     if (!banner.link) return content;
-                    // Link externo (http) → <a>; caminho interno (/shop...) → Link do router.
-                    return /^https?:\/\//i.test(banner.link)
-                      ? <a href={banner.link} className="block">{content}</a>
-                      : <Link to={banner.link} className="block">{content}</Link>;
+                    // Sempre <a href> (acessível/clique-direito); a navegação real
+                    // é feita no onClick (contorna o Embla e faz SPA no mesmo site).
+                    return (
+                      <a
+                        href={banner.link}
+                        className="block"
+                        onPointerDown={handleBannerPointerDown}
+                        onClick={(e) => handleBannerClick(e, banner.link)}
+                      >
+                        {content}
+                      </a>
+                    );
                   })()
                 ) : (
                   <div className={`relative h-[70vh] md:h-[600px] min-h-[480px] bg-gradient-to-br ${banner.gradient} flex items-center overflow-hidden`}>
