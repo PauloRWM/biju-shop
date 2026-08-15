@@ -36,6 +36,8 @@ export interface HomepageConfig {
   banners?: HomeBanner[];
   /** Popup promocional (modal ao entrar), configurável no admin. */
   popup?: HomePopup;
+  /** Pedido mínimo (subtotal de produtos) vindo do WooCommerce. 0 = sem mínimo. */
+  min_order?: number;
 }
 
 export async function fetchHomepageConfig(): Promise<HomepageConfig> {

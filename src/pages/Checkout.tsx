@@ -3,6 +3,7 @@ import { Link, useNavigate } from "react-router-dom";
 import Layout from "@/components/layout/Layout";
 import { useCart } from "@/contexts/CartContext";
 import { useCreateOrder, useOrder } from "@/hooks/useOrder";
+import { useHomepageConfig } from "@/hooks/useProducts";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -145,13 +146,19 @@ function mapPaymentRejectionMessage(raw: string): string {
 
 // Mínimo aceito por pedido e por parcela (regra de negócio + alinhada ao MP).
 const MIN_AMOUNT = 2;
-// Pedido mínimo (atacado) — calculado sobre o subtotal de produtos, sem frete.
-const MIN_SUBTOTAL = 197.99;
+// Fallback do pedido mínimo (subtotal de produtos) caso o backend não informe.
+// O valor REAL vem do WooCommerce (plugin Pedido Mínimo A23) via /homepage —
+// antes isso era fixo aqui e mudar no admin não tinha efeito.
+const DEFAULT_MIN_SUBTOTAL = 197.99;
 
 const Checkout = () => {
   const { items, totalPrice, clearCart, coupon, setCoupon, setGuestContact, removeItem, updateQuantity } = useCart();
   const navigate = useNavigate();
   const createOrder = useCreateOrder();
+  const { data: homepageConfig } = useHomepageConfig();
+  // Pedido mínimo lido do WooCommerce (0 = sem mínimo). Fallback se não vier.
+  const minSubtotal =
+    typeof homepageConfig?.min_order === "number" ? homepageConfig.min_order : DEFAULT_MIN_SUBTOTAL;
   const [step, setStep] = useState<"form" | "success">("form");
   const [orderId, setOrderId] = useState<number | null>(null);
   const [paymentDetails, setPaymentDetails] = useState<import("@/services/orders").PaymentDetails | null>(null);
@@ -693,9 +700,9 @@ const Checkout = () => {
       return;
     }
 
-    if (totalPrice < MIN_SUBTOTAL) {
+    if (minSubtotal > 0 && totalPrice < minSubtotal) {
       toast.error(
-        `Pedido mínimo de R$ ${MIN_SUBTOTAL.toFixed(2).replace(".", ",")} em produtos. Faltam R$ ${(MIN_SUBTOTAL - totalPrice).toFixed(2).replace(".", ",")}.`,
+        `Pedido mínimo de R$ ${minSubtotal.toFixed(2).replace(".", ",")} em produtos. Faltam R$ ${(minSubtotal - totalPrice).toFixed(2).replace(".", ",")}.`,
       );
       return;
     }
@@ -1537,10 +1544,10 @@ const Checkout = () => {
                       </div>
                     </div>
 
-                    {totalPrice < MIN_SUBTOTAL && (
+                    {minSubtotal > 0 && totalPrice < minSubtotal && (
                       <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-xs text-destructive">
-                        Pedido mínimo de <strong>R$ {MIN_SUBTOTAL.toFixed(2).replace(".", ",")}</strong> em produtos.
-                        Faltam <strong>R$ {(MIN_SUBTOTAL - totalPrice).toFixed(2).replace(".", ",")}</strong> para finalizar.
+                        Pedido mínimo de <strong>R$ {minSubtotal.toFixed(2).replace(".", ",")}</strong> em produtos.
+                        Faltam <strong>R$ {(minSubtotal - totalPrice).toFixed(2).replace(".", ",")}</strong> para finalizar.
                       </div>
                     )}
 
@@ -1548,7 +1555,7 @@ const Checkout = () => {
                       type="submit"
                       className="w-full h-12 text-base gap-2"
                       size="lg"
-                      disabled={createOrder.isPending || totalPrice < MIN_SUBTOTAL}
+                      disabled={createOrder.isPending || (minSubtotal > 0 && totalPrice < minSubtotal)}
                     >
                       <Lock className="h-4 w-4" />
                       {createOrder.isPending ? "Processando..." : "Confirmar Pedido"}

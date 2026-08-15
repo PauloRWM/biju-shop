@@ -47,6 +47,16 @@ class Biju_Cache {
         // add_option_* cobre o PRIMEIRO cadastro (option ainda não existia) —
         // update_option_* só dispara quando a option já existe e muda.
         add_action( 'add_option_biju_home_banners',          $bump );
+
+        // Pedido mínimo (plugin Pedido Mínimo A23): quando o cliente muda o valor
+        // no WooCommerce, reseta o cache da /homepage IMEDIATAMENTE (bump sozinho
+        // não é confiável com Redis — ver save da home). Ação rara → flush ok.
+        $bump_flush = function () {
+            self::bump_version();
+            if ( function_exists( 'wp_cache_flush' ) ) wp_cache_flush();
+        };
+        add_action( 'update_option_a23comunicacoes_pedido_minimo', $bump_flush );
+        add_action( 'add_option_a23comunicacoes_pedido_minimo',    $bump_flush );
     }
 
     /**

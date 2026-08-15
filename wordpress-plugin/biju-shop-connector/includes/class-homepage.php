@@ -63,10 +63,11 @@ class Biju_Homepage {
             }
 
             return [
-                'menu'     => $menu,
-                'sections' => $enriched,
-                'banners'  => self::get_banners(),
-                'popup'    => self::get_popup(),
+                'menu'      => $menu,
+                'sections'  => $enriched,
+                'banners'   => self::get_banners(),
+                'popup'     => self::get_popup(),
+                'min_order' => self::get_min_order(),
             ];
         } );
 
@@ -493,6 +494,15 @@ class Biju_Homepage {
             'image_mobile' => isset( $p['image_mobile'] ) ? esc_url_raw( (string) $p['image_mobile'] ) : '',
             'link'         => isset( $p['link'] ) ? (string) $p['link'] : '',
         ];
+    }
+
+    /**
+     * Pedido mínimo (subtotal de produtos) — lido do plugin "Pedido Mínimo" da
+     * A23 (option a23comunicacoes_pedido_minimo). Antes o front usava um valor
+     * FIXO (197,99), então mudar no WooCommerce não tinha efeito. 0 = sem mínimo.
+     */
+    private static function get_min_order(): float {
+        return (float) get_option( 'a23comunicacoes_pedido_minimo', 0 );
     }
 
     private static function cat_select( string $name, string $selected, array $cats ): void {
