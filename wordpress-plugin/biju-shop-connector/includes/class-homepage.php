@@ -66,6 +66,7 @@ class Biju_Homepage {
                 'menu'     => $menu,
                 'sections' => $enriched,
                 'banners'  => self::get_banners(),
+                'popup'    => self::get_popup(),
             ];
         } );
 
@@ -155,6 +156,22 @@ class Biju_Homepage {
                 ];
             }
             update_option( 'biju_home_banners', $banners );
+
+            // Popup promocional (modal ao entrar). Arte única (imagem) + link opcional.
+            $pop_link = trim( (string) ( $_POST['popup_link'] ?? '' ) );
+            if ( $pop_link !== '' ) {
+                if ( preg_match( '#^https?://#i', $pop_link ) )      $pop_link = esc_url_raw( $pop_link );
+                elseif ( $pop_link[0] === '/' )                       $pop_link = sanitize_text_field( $pop_link );
+                else                                                  $pop_link = '';
+            }
+            update_option( 'biju_home_popup', [
+                'enabled'         => ! empty( $_POST['popup_enabled'] ),
+                'image'           => esc_url_raw( trim( (string) ( $_POST['popup_image_url'] ?? '' ) ) ),
+                'image_id'        => absint( $_POST['popup_image_id'] ?? 0 ),
+                'image_mobile'    => esc_url_raw( trim( (string) ( $_POST['popup_mobile_url'] ?? '' ) ) ),
+                'image_mobile_id' => absint( $_POST['popup_mobile_id'] ?? 0 ),
+                'link'            => $pop_link,
+            ] );
 
             // Invalida o cache da /homepage imediatamente. O bump_version sozinho
             // NÃO é confiável com o Redis Object Cache ativo (alguns requests ainda
@@ -293,6 +310,53 @@ class Biju_Homepage {
                 </table>
                 <p><button type="button" class="button" id="biju-add-banner">+ Adicionar banner</button></p>
 
+                <hr style="margin:32px 0">
+
+                <!-- ── POPUP PROMOCIONAL ───────────────────────────────── -->
+                <?php
+                $popup = get_option( 'biju_home_popup', [] );
+                if ( ! is_array( $popup ) ) $popup = [];
+                $pimg  = esc_url( $popup['image'] ?? '' );
+                $pmimg = esc_url( $popup['image_mobile'] ?? '' );
+                ?>
+                <h2>Popup Promocional</h2>
+                <p class="description">
+                    Modal que abre quando o cliente entra no site (aparece 1x por sessão). É uma <strong>arte única</strong> (imagem) — desenhe no Canva/Photoshop com o texto e o botão. Clicar na imagem leva ao link (opcional). Funciona no desktop e no mobile.<br>
+                    Recomendado: <strong>desktop ~1080×1350px</strong> (retrato) · <strong>mobile ~1080×1600px</strong>.
+                </p>
+
+                <table class="form-table" style="max-width:900px">
+                    <tr>
+                        <th>Ativar</th>
+                        <td>
+                            <label><input type="checkbox" name="popup_enabled" value="1" <?php checked( ! empty( $popup['enabled'] ) ); ?>> Mostrar o popup no site</label>
+                        </td>
+                    </tr>
+                    <tr>
+                        <th>Imagem (desktop)</th>
+                        <td>
+                            <div class="biju-popup-preview" style="margin-bottom:6px"><?php if ( $pimg ) : ?><img src="<?php echo $pimg; ?>" style="max-width:200px;height:auto;display:block;border:1px solid #ddd;border-radius:4px"><?php endif; ?></div>
+                            <input type="hidden" name="popup_image_id"  value="<?php echo absint( $popup['image_id'] ?? 0 ); ?>">
+                            <input type="hidden" name="popup_image_url" value="<?php echo esc_attr( $popup['image'] ?? '' ); ?>">
+                            <button type="button" class="button biju-pick-popup"><?php echo $pimg ? 'Trocar imagem' : 'Selecionar imagem'; ?></button>
+                        </td>
+                    </tr>
+                    <tr>
+                        <th>Imagem (mobile)</th>
+                        <td>
+                            <div class="biju-popup-mobile-preview" style="margin-bottom:6px"><?php if ( $pmimg ) : ?><img src="<?php echo $pmimg; ?>" style="max-width:130px;height:auto;display:block;border:1px solid #ddd;border-radius:4px"><?php endif; ?></div>
+                            <input type="hidden" name="popup_mobile_id"  value="<?php echo absint( $popup['image_mobile_id'] ?? 0 ); ?>">
+                            <input type="hidden" name="popup_mobile_url" value="<?php echo esc_attr( $popup['image_mobile'] ?? '' ); ?>">
+                            <button type="button" class="button biju-pick-popup-mobile"><?php echo $pmimg ? 'Trocar imagem' : 'Selecionar imagem'; ?></button>
+                            <p class="description">Opcional. Sem imagem mobile, o celular usa a de desktop.</p>
+                        </td>
+                    </tr>
+                    <tr>
+                        <th>Link (opcional)</th>
+                        <td><input type="text" name="popup_link" value="<?php echo esc_attr( $popup['link'] ?? '' ); ?>" placeholder="/shop ou https://..." style="width:100%;max-width:400px"></td>
+                    </tr>
+                </table>
+
                 <?php submit_button( 'Salvar', 'primary', 'biju_save_homepage' ); ?>
             </form>
         </div>
@@ -367,6 +431,14 @@ class Biju_Homepage {
                 e.preventDefault();
                 bijuPickMedia( e.target, 'banner_mobile_image_id[]', 'banner_mobile_image_url[]', '.biju-banner-mobile-preview', 110 );
             }
+            if ( e.target.classList.contains('biju-pick-popup') ) {
+                e.preventDefault();
+                bijuPickMedia( e.target, 'popup_image_id', 'popup_image_url', '.biju-popup-preview', 200 );
+            }
+            if ( e.target.classList.contains('biju-pick-popup-mobile') ) {
+                e.preventDefault();
+                bijuPickMedia( e.target, 'popup_mobile_id', 'popup_mobile_url', '.biju-popup-mobile-preview', 130 );
+            }
             if ( e.target.classList.contains('biju-clear-mobile') ) {
                 e.preventDefault();
                 var cell = e.target.closest('td');
@@ -405,6 +477,22 @@ class Biju_Homepage {
             ];
         }
         return $out;
+    }
+
+    /**
+     * Popup promocional (modal ao entrar). `enabled` só é true se estiver ligado
+     * E tiver imagem — o front nunca mostra popup vazio.
+     */
+    private static function get_popup(): array {
+        $p     = get_option( 'biju_home_popup', [] );
+        if ( ! is_array( $p ) ) $p = [];
+        $image = isset( $p['image'] ) ? esc_url_raw( (string) $p['image'] ) : '';
+        return [
+            'enabled'      => ! empty( $p['enabled'] ) && $image !== '',
+            'image'        => $image,
+            'image_mobile' => isset( $p['image_mobile'] ) ? esc_url_raw( (string) $p['image_mobile'] ) : '',
+            'link'         => isset( $p['link'] ) ? (string) $p['link'] : '',
+        ];
     }
 
     private static function cat_select( string $name, string $selected, array $cats ): void {

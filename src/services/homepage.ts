@@ -22,11 +22,20 @@ export interface HomeBanner {
   alt?: string;
 }
 
+export interface HomePopup {
+  enabled: boolean;
+  image: string;
+  image_mobile?: string;
+  link?: string;
+}
+
 export interface HomepageConfig {
   menu: MenuItem[];
   sections: HomeSection[];
   /** Banners do carrossel configurados no admin. Vazio → front usa os padrão. */
   banners?: HomeBanner[];
+  /** Popup promocional (modal ao entrar), configurável no admin. */
+  popup?: HomePopup;
 }
 
 export async function fetchHomepageConfig(): Promise<HomepageConfig> {

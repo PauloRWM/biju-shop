@@ -2,6 +2,8 @@ import Header from "./Header";
 import Footer from "./Footer";
 import MobileBottomNav from "@/components/MobileBottomNav";
 import WhatsAppFloat from "@/components/WhatsAppFloat";
+import PromoPopup from "@/components/PromoPopup";
+import CookieConsent from "@/components/CookieConsent";
 
 const Layout = ({ children }: { children: React.ReactNode }) => (
   <div className="min-h-screen flex flex-col overflow-x-hidden">
@@ -11,6 +13,8 @@ const Layout = ({ children }: { children: React.ReactNode }) => (
     <Footer />
     <MobileBottomNav />
     <WhatsAppFloat />
+    <PromoPopup />
+    <CookieConsent />
   </div>
 );
 
