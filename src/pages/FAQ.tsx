@@ -1,4 +1,5 @@
 import Layout from "@/components/layout/Layout";
+import { useHomepageConfig } from "@/hooks/useProducts";
 import {
   Accordion,
   AccordionContent,
@@ -19,24 +20,34 @@ import {
   MessageCircle,
 } from "lucide-react";
 
+// Resposta do pedido mínimo — lê o valor REAL do WooCommerce (via /homepage),
+// então acompanha o que o admin configurar em vez de um texto fixo.
+const PedidoMinimoAnswer = () => {
+  const { data: config } = useHomepageConfig();
+  const min =
+    typeof config?.min_order === "number" && config.min_order > 0 ? config.min_order : 197.99;
+  const fmt = `R$ ${min.toFixed(2).replace(".", ",")}`;
+  return (
+    <>
+      <p>
+        O pedido mínimo é de <strong>{fmt}</strong>.
+      </p>
+      <p>
+        Você pode escolher as peças que quiser até atingir esse valor — sem
+        exigência de quantidade mínima por modelo.
+      </p>
+      <p className="text-muted-foreground">
+        Ideal para quem está começando na revenda e quer testar os produtos.
+      </p>
+    </>
+  );
+};
+
 const faqs = [
   {
     icon: Wallet,
     question: "Qual é o pedido mínimo?",
-    answer: (
-      <>
-        <p>
-          O pedido mínimo é de <strong>R$ 47,99</strong>.
-        </p>
-        <p>
-          Você pode escolher as peças que quiser até atingir esse valor — sem
-          exigência de quantidade mínima por modelo.
-        </p>
-        <p className="text-muted-foreground">
-          Ideal para quem está começando na revenda e quer testar os produtos.
-        </p>
-      </>
-    ),
+    answer: <PedidoMinimoAnswer />,
   },
   {
     icon: TrendingUp,
