@@ -108,7 +108,8 @@ const PAYMENT_REJECTION_MESSAGES: Record<string, string> = {
 const MP_API_ERROR_MESSAGES: Array<{ pattern: RegExp; message: string }> = [
   { pattern: /invalid.*transaction_amount/i, message: "Valor do pedido inválido. Tente um valor maior ou contate o suporte." },
   { pattern: /amount.*is.*required|amount.*missing/i, message: "Valor do pedido ausente. Atualize a página e tente novamente." },
-  { pattern: /invalid.*payer.*email/i, message: "E-mail inválido. Confira o e-mail informado." },
+  // Cobre "invalid payer email" E "payer.email must be a valid email" (MP 400).
+  { pattern: /payer[._\s]?email|(valid|inv[aá]lid).*e-?mail|e-?mail.*(valid|inv[aá]lid)/i, message: "E-mail inválido. Confira o endereço (ex.: precisa terminar em .com) e tente de novo." },
   { pattern: /invalid.*identification.*number|invalid.*payer.*identification/i, message: "CPF inválido. Confira os dígitos." },
   { pattern: /invalid.*token|card.*token.*not.*found|token.*expired/i, message: "Sessão do cartão expirou. Recarregue a página e digite os dados novamente." },
   { pattern: /invalid.*payment_method/i, message: "Bandeira do cartão não aceita. Tente outro cartão." },
@@ -581,6 +582,28 @@ const Checkout = () => {
     return /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/.test(e);
   };
 
+  // Erros de digitação comuns que passam no regex mas o Mercado Pago recusa
+  // (ex.: "@icloud.con" em vez de ".com" → 5 pedidos "Com falha" no PIX).
+  // Retorna o e-mail corrigido sugerido, ou null se parece ok.
+  const emailTypoSuggestion = (email: string): string | null => {
+    const e = email.trim().toLowerCase();
+    const at = e.lastIndexOf("@");
+    if (at < 0) return null;
+    const domain = e.slice(at + 1);
+    // TLDs que são quase sempre erro de ".com"
+    const tldTypos: Record<string, string> = {
+      con: "com", conm: "com", comm: "com", cim: "com", cpm: "com", clm: "com",
+      vom: "com", xom: "com", ocm: "com", "co,": "com", "com,": "com", cm: "com", om: "com",
+    };
+    const parts = domain.split(".");
+    const tld = parts[parts.length - 1];
+    if (tldTypos[tld]) {
+      parts[parts.length - 1] = tldTypos[tld];
+      return e.slice(0, at + 1) + parts.join(".");
+    }
+    return null;
+  };
+
   // Telefone BR: precisa ter 10 ou 11 dígitos (DDD + número, com ou sem 9).
   const isValidPhone = (phone: string) => {
     const s = phone.replace(/\D/g, "");
@@ -677,6 +700,11 @@ const Checkout = () => {
     // E-mail
     if (!isValidEmail(form.email)) {
       toast.error("E-mail inválido. Confira o endereço digitado.");
+      return;
+    }
+    const emailFix = emailTypoSuggestion(form.email);
+    if (emailFix) {
+      toast.error(`Confira o e-mail: você quis dizer "${emailFix}"? Corrija para o pagamento funcionar.`, { duration: 8000 });
       return;
     }
     // CPF/CNPJ obrigatório (cartão, PIX, boleto) — exigido pelo Mercado Pago
