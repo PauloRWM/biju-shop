@@ -7,6 +7,11 @@ import { useHomepageConfig } from "@/hooks/useProducts";
 // Rotas onde NÃO mostramos o popup (não interromper compra).
 const SUPPRESSED = ["/checkout", "/carrinho", "/cart"];
 
+// Flag por CARREGAMENTO de página: reseta a cada reload (novo carregamento do
+// JS), mas persiste durante a navegação SPA (o Layout remonta a cada rota).
+// Assim o popup aparece 1x por reload, sem reabrir ao trocar de página.
+let shownThisLoad = false;
+
 /**
  * Popup promocional (modal ao entrar no site). Arte única (imagem) configurada
  * no wp-admin (Configurações → Biju Shop — Página Inicial → Popup Promocional).
@@ -22,31 +27,19 @@ const PromoPopup = () => {
 
   const enabled = !!popup?.enabled && !!popup?.image;
   const suppressed = SUPPRESSED.some((p) => location.pathname.startsWith(p));
-  // Chave por imagem: trocar a arte no admin faz o popup reaparecer.
-  const seenKey = enabled ? `biju_promo_seen:${popup!.image}` : "";
 
   useEffect(() => {
-    if (!enabled || suppressed) return;
-    let seen = false;
-    try {
-      seen = sessionStorage.getItem(seenKey) === "1";
-    } catch {
-      /* modo privado: mostra mesmo assim */
-    }
-    if (seen) return;
-    // Pequeno atraso para não competir com o carregamento inicial.
-    const t = setTimeout(() => setOpen(true), 900);
+    if (!enabled || suppressed || shownThisLoad) return;
+    // Pequeno atraso para não competir com o carregamento inicial. Só marca como
+    // mostrado quando de fato abre → aparece 1x por reload do site.
+    const t = setTimeout(() => {
+      shownThisLoad = true;
+      setOpen(true);
+    }, 900);
     return () => clearTimeout(t);
-  }, [enabled, suppressed, seenKey]);
+  }, [enabled, suppressed]);
 
-  const close = () => {
-    setOpen(false);
-    try {
-      sessionStorage.setItem(seenKey, "1");
-    } catch {
-      /* ignora */
-    }
-  };
+  const close = () => setOpen(false);
 
   // Fecha no Esc.
   useEffect(() => {
